@@ -150,6 +150,9 @@ svg text{font-family:inherit}
 .fl.on{background:#FAC775}.fl.cur{outline:2px solid #fff;outline-offset:2px}
 .fcap{text-align:center;font-size:12px;opacity:.8;margin:6px 0}
 .nd{font-size:12px;color:var(--fg2);padding:24px 0;text-align:center}
+[data-mi]{cursor:pointer;border-radius:8px;transition:background-color .15s}
+[data-mi]:hover{background-color:color-mix(in srgb,var(--primary-text-color) 5%,transparent)}
+.ft [data-mi]:hover,.ft[data-mi]:hover{background-color:rgba(255,255,255,.06)}
 `;
 
 class TempestLightmapCard extends HTMLElement {
@@ -195,6 +198,12 @@ class TempestLightmapCard extends HTMLElement {
     if (!this.shadowRoot) {
       this.attachShadow({ mode: 'open' });
       this.shadowRoot.innerHTML = `<style>${TLC_CSS}</style><div class="w"><div class="g" id="g"></div></div>`;
+      // Tapping anything tagged with an entity opens HA's more-info dialog for
+      // it; the innermost tagged element wins (e.g. gust inside the wind scale).
+      this.shadowRoot.addEventListener('click', ev => {
+        const el = ev.composedPath().find(n => n.dataset && n.dataset.mi);
+        if (el) this.dispatchEvent(new CustomEvent('hass-more-info', { detail: { entityId: el.dataset.mi }, bubbles: true, composed: true }));
+      });
     }
     if (!this._e || h.entities !== this._regRef) this._resolve();
     if (this.isConnected) this._start();
@@ -271,6 +280,8 @@ class TempestLightmapCard extends HTMLElement {
     return v.length ? [Math.min(...v).toFixed(this._pd()), Math.max(...v).toFixed(this._pd())] : ['—', '—'];
   }
   _n(k) { const x = parseFloat(this._s(k)); return isNaN(x) ? null : x; }
+  // Attribute that makes an element open the more-info dialog for entity key k.
+  _mi(k) { const id = this._e && this._e[k]; return id ? ` data-mi="${tlcEsc(id)}"` : ''; }
   _f(k, d = 0) { const x = this._n(k); return x == null ? '—' : x.toFixed(d); }
 
   _render() {
@@ -306,17 +317,17 @@ class TempestLightmapCard extends HTMLElement {
     const sun = this._hass.states[this._e.sun], up = sun && sun.state === 'above_horizon';
     const sunT = sun ? this._time(new Date(up ? sun.attributes.next_setting : sun.attributes.next_rising)) : '—';
     const rain = this._rainNow('rain'), lt = parseInt(this._s('strikes')) || 0;
-    const q = (l, v, col) => `<div><div class="lbl">${l}</div><div class="qv"${col ? ` style="color:${col}"` : ''}>${v}</div></div>`;
+    const q = (k, l, v, col) => `<div${this._mi(k)}><div class="lbl">${l}</div><div class="qv"${col ? ` style="color:${col}"` : ''}>${v}</div></div>`;
     const Q = {
-      dew_point: () => q('Dew point', this._f('dew') + '°'),
-      rain_today: () => q('Rain today', rain == null ? '—' : rain.toFixed(this._rd()) + ' ' + this._ru(), rain ? '#378ADD' : ''),
-      lightning: () => q('Lightning 3h', lt + ' strikes', lt ? '#E5A800' : ''),
-      sun: () => q(up ? 'Sunset' : 'Sunrise', sunT, '#D85A30')
+      dew_point: () => q('dew', 'Dew point', this._f('dew') + '°'),
+      rain_today: () => q('rain', 'Rain today', rain == null ? '—' : rain.toFixed(this._rd()) + ' ' + this._ru(), rain ? '#378ADD' : ''),
+      lightning: () => q('strikes', 'Lightning 3h', lt + ' strikes', lt ? '#E5A800' : ''),
+      sun: () => q('sun', up ? 'Sunset' : 'Sunrise', sunT, '#D85A30')
     };
-    const feels = this._e.feels ? ` · feels like ${this._f('feels')}°` : '';
+    const feels = this._e.feels ? `<span${this._mi('feels')}> · feels like ${this._f('feels')}°</span>` : '';
     return `<div class="p s12 hdr"><div class="tab"><span>${tlcEsc(this._title)}</span></div>
-<div class="brand"><div class="wm">Tempest<sup>°</sup></div><div class="bar"></div><div class="live"><span class="dot" style="background:${ok ? '#639922' : '#EF9F27'}"></span>${ok ? 'Live' : 'Stale'} · ${m == null ? 'no update' : m < 1 ? 'updated just now' : 'updated ' + m + ' min ago'}</div></div>
-<div class="now"><ha-icon icon="${c[0]}" style="color:${c[2]}"></ha-icon><div><div class="big">${t == null ? '—' : t.toFixed(1)}<u>${tu}</u></div><div class="lbl" style="margin-top:6px">${c[1]}${feels}</div></div></div>
+<div class="brand"><div class="wm">Tempest<sup>°</sup></div><div class="bar"></div><div class="live"${this._mi('ts')}><span class="dot" style="background:${ok ? '#639922' : '#EF9F27'}"></span>${ok ? 'Live' : 'Stale'} · ${m == null ? 'no update' : m < 1 ? 'updated just now' : 'updated ' + m + ' min ago'}</div></div>
+<div class="now"><ha-icon icon="${c[0]}" style="color:${c[2]}"${this._mi('weather')}></ha-icon><div><div class="big"${this._mi('temp')}>${t == null ? '—' : t.toFixed(1)}<u>${tu}</u></div><div class="lbl" style="margin-top:6px"><span${this._mi('weather')}>${c[1]}</span>${feels}</div></div></div>
 ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<div></div>'}</div>`;
   }
 
@@ -346,7 +357,7 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
       });
       body = `<svg viewBox="0 0 ${W} ${vbH}" width="100%">${s}</svg><div class="leg"><span><i style="background:#EF9F27"></i>sun</span><span><i style="background:#7F77DD"></i>clear night</span><span><i style="background:#9A9890"></i>cloud</span><span><i style="background:#378ADD"></i>rain</span><span><i style="background:#E24B4A"></i>storm</span><span>${maxP ? 'bars = rain chance' : 'no rain expected'}</span></div>`;
     }
-    return `<div class="p s8"><div class="h"><b>Next 12 hours</b><span>forecast</span></div>${body}</div>`;
+    return `<div class="p s8"${this._mi('weather')}><div class="h"><b>Next 12 hours</b><span>forecast</span></div>${body}</div>`;
   }
 
   _days() {
@@ -361,7 +372,7 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
         return `<div>${dt.toDateString() === today ? 'Today' : dt.toLocaleDateString([], { weekday: 'short' })}<ha-icon icon="${c[0]}" style="color:${c[2]}"></ha-icon><div class="hi">${Math.round(d.temperature)}°</div><div class="rng"><div style="top:${(hi - d.temperature) / rg * 54}px;bottom:${(l - lo) / rg * 54}px"></div></div><div>${Math.round(l)}°</div><div style="color:${p ? '#378ADD' : 'var(--secondary-text-color)'};margin-top:3px">${p}%</div></div>`;
       }).join('')}</div>`;
     }
-    return `<div class="p s4"><div class="h"><b>10-day forecast</b><span>high · low · rain</span></div>${body}</div>`;
+    return `<div class="p s4"${this._mi('weather')}><div class="h"><b>10-day forecast</b><span>high · low · rain</span></div>${body}</div>`;
   }
 
   _hum() {
@@ -372,7 +383,7 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
       s += `<text x="${80 + 69 * Math.cos(a)}" y="${84 - 69 * Math.sin(a)}" text-anchor="middle" style="font-size:10px;fill:var(--secondary-text-color)">${i * 10}</text>`;
     }
     s += `<text x="80" y="88" text-anchor="middle" style="font-size:28px;font-weight:500;fill:var(--primary-text-color)">${v == null ? '—' : Math.round(v)}<tspan style="font-size:14px;fill:var(--secondary-text-color)">%</tspan></text>`;
-    return `<div class="p s3"><div class="h"><b>Humidity</b><span>dew point ${this._f('dew')}°</span></div><div class="dial"><svg viewBox="0 0 160 150">${s}</svg></div></div>`;
+    return `<div class="p s3"${this._mi('hum')}><div class="h"><b>Humidity</b><span${this._mi('dew')}>dew point ${this._f('dew')}°</span></div><div class="dial"><svg viewBox="0 0 160 150">${s}</svg></div></div>`;
   }
 
   _windDir() {
@@ -388,7 +399,7 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
     });
     s += `<circle cx="80" cy="80" r="5" fill="var(--off)"/>`;
     const card = d == null ? '—' : ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'][Math.round(d / 22.5) % 16];
-    return `<div class="p s3"><div class="h"><b>Wind direction</b><span>from ${card}${d == null ? '' : ' · ' + Math.round(d) + '°'}</span></div><div class="dial"><svg viewBox="0 0 160 160">${s}</svg></div></div>`;
+    return `<div class="p s3"${this._mi('dir')}><div class="h"><b>Wind direction</b><span>from ${card}${d == null ? '' : ' · ' + Math.round(d) + '°'}</span></div><div class="dial"><svg viewBox="0 0 160 160">${s}</svg></div></div>`;
   }
 
   _scale(labels, litFn, extra) {
@@ -419,9 +430,10 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
     out.wind = () => {
       const wu = this._wu(), w = this._n('wind') || 0, gu = this._n('gust') || 0, custom = tlcMarks(c.wind_scale), wt = custom || TLC_WIND[wu][0];
       const dec = custom ? Math.max(tlcDec(c.wind_scale.min), tlcDec(c.wind_scale.step)) : 0;
-      return `<div class="h"><b>Wind and gust, ${tlcEsc(wu)}</b><span><i class="dot" style="background:#EF9F27"></i> ${w.toFixed(1)} wind${this._e.gust ? ` · <i class="dot" style="background:#FAC775"></i> ${gu.toFixed(1)} gust` : ''}</span></div>${this._scale(wt.map(v => v.toFixed(dec)), i => w >= wt[i] ? '#EF9F27' : gu >= wt[i] ? '#FAC775' : '')}`;
+      return `<div class="h"><b>Wind and gust, ${tlcEsc(wu)}</b><span><i class="dot" style="background:#EF9F27"></i> ${w.toFixed(1)} wind${this._e.gust ? ` · <span${this._mi('gust')}><i class="dot" style="background:#FAC775"></i> ${gu.toFixed(1)} gust</span>` : ''}</span></div>${this._scale(wt.map(v => v.toFixed(dec)), i => w >= wt[i] ? '#EF9F27' : gu >= wt[i] ? '#FAC775' : '')}`;
     };
-    return `<div class="p s6 t12 scs">${items.map(i => `<div${TLC_HALF_ITEMS.includes(i) ? '' : ' class="full"'}>${out[i]()}</div>`).join('')}</div>`;
+    const ent = { precipitation: 'rate', uv: 'uv', rain_today: 'rain', wind: 'wind' };
+    return `<div class="p s6 t12 scs">${items.map(i => `<div${TLC_HALF_ITEMS.includes(i) ? '' : ' class="full"'}${this._mi(ent[i])}>${out[i]()}</div>`).join('')}</div>`;
   }
 
   _status(items) {
@@ -444,9 +456,9 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
     const ml = mp ? tlcEsc(mp.replace(/_/g, ' ')) : '—';
     const cl = tlcEsc((TLC_COND[w] || [0, w || '—'])[1]);
     const out = {
-      conditions: a => `<div><div class="h ${a}"><b>Conditions</b><span>${cl}</span></div>${cond}</div>`,
-      pressure: a => `<div><div class="h ${a}"><b>Pressure</b><span>${this._f('press', this._pd())} ${tlcEsc(this._pu())}</span></div>${pt}</div>`,
-      moon: a => `<div><div class="h ${a}"><b>Moon phase</b><span>${ml}</span></div>${moon}</div>`
+      conditions: a => `<div${this._mi('weather')}><div class="h ${a}"><b>Conditions</b><span>${cl}</span></div>${cond}</div>`,
+      pressure: a => `<div${this._mi('trend')}><div class="h ${a}"><b>Pressure</b><span${this._mi('press')}>${this._f('press', this._pd())} ${tlcEsc(this._pu())}</span></div>${pt}</div>`,
+      moon: a => `<div${this._mi('moon')}><div class="h ${a}"><b>Moon phase</b><span>${ml}</span></div>${moon}</div>`
     };
     const n = items.length, align = i => n === 1 ? 'c' : i === 0 ? 'l' : i === n - 1 ? 'r' : 'c';
     return `<div class="p s12 st" style="grid-template-columns:${items.map(i => TLC_COND_WIDTH[i]).join(' ')}">${items.map((i, k) => out[i](align(k))).join('')}</div>`;
@@ -479,19 +491,19 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
     return `<svg viewBox="0 0 600 150" width="100%">${s}</svg>`;
   }
 
-  _head(t, items) { return `<div class="h"><b>${t}</b><span>${items.map(i => `<i class="dot" style="background:${i[1]}"></i> ${i[0]}`).join(' &nbsp; ')}</span></div>`; }
+  _head(t, items) { return `<div class="h"><b>${t}</b><span>${items.map(i => `<span${i[2] ? this._mi(i[2]) : ''}><i class="dot" style="background:${i[1]}"></i> ${i[0]}</span>`).join(' &nbsp; ')}</span></div>`; }
   _tempChart() {
-    const e = this._e, h = this._h, dew = e.dew ? [[`dew point ${this._f('dew')}°`, '#26A3C6']] : [];
-    return `<div class="p s6">${this._head('Temperature · 24h', [[`air ${this._f('temp', 1)}°`, '#D85A30'], ...dew])}${this._line([{ pts: h[e.temp], color: '#D85A30' }, { pts: h[e.dew], color: '#26A3C6', w: 1.5 }], 864e5, 0)}</div>`;
+    const e = this._e, h = this._h, dew = e.dew ? [[`dew point ${this._f('dew')}°`, '#26A3C6', 'dew']] : [];
+    return `<div class="p s6"${this._mi('temp')}>${this._head('Temperature · 24h', [[`air ${this._f('temp', 1)}°`, '#D85A30'], ...dew])}${this._line([{ pts: h[e.temp], color: '#D85A30' }, { pts: h[e.dew], color: '#26A3C6', w: 1.5 }], 864e5, 0)}</div>`;
   }
   _windChart() {
     const e = this._e, h = this._h, wu = tlcEsc(this._wu());
-    const items = e.gust ? [[`wind ${this._f('wind', 1)}`, '#EF9F27'], [`gust ${this._f('gust', 1)} ${wu}`, '#E24B4A']] : [[`wind ${this._f('wind', 1)} ${wu}`, '#EF9F27']];
-    return `<div class="p s6">${this._head('Wind and gust · 24h', items)}${this._line([{ pts: h[e.wind], color: '#EF9F27', zero: true }, { pts: h[e.gust], color: '#E24B4A', agg: 'max', w: 1.5 }], 864e5, 0)}</div>`;
+    const items = e.gust ? [[`wind ${this._f('wind', 1)}`, '#EF9F27'], [`gust ${this._f('gust', 1)} ${wu}`, '#E24B4A', 'gust']] : [[`wind ${this._f('wind', 1)} ${wu}`, '#EF9F27']];
+    return `<div class="p s6"${this._mi('wind')}>${this._head('Wind and gust · 24h', items)}${this._line([{ pts: h[e.wind], color: '#EF9F27', zero: true }, { pts: h[e.gust], color: '#E24B4A', agg: 'max', w: 1.5 }], 864e5, 0)}</div>`;
   }
   _pressChart() {
     const e = this._e, h = this._h, pd = this._pd(), [pmin, pmax] = this._pRange();
-    return `<div class="p s6">${this._head('Pressure · 24h', [[`${this._f('press', pd)} ${tlcEsc(this._pu())}`, '#7F77DD'], [`range ${pmin}–${pmax}`, 'var(--off)']])}${this._line([{ pts: h[e.press], color: '#7F77DD' }], 864e5, pd)}</div>`;
+    return `<div class="p s6"${this._mi('press')}>${this._head('Pressure · 24h', [[`${this._f('press', pd)} ${tlcEsc(this._pu())}`, '#7F77DD'], [`range ${pmin}–${pmax}`, 'var(--off)']])}${this._line([{ pts: h[e.press], color: '#7F77DD' }], 864e5, pd)}</div>`;
   }
 
   _rainChart() {
@@ -509,7 +521,7 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
       body = `<svg viewBox="0 0 600 150" width="100%">${s}</svg>`;
       this._rainTotal = total;
     }
-    return `<div class="p s6"><div class="h"><b>Daily rain · 30 days</b><span><i class="dot" style="background:#378ADD"></i> ${(this._rainTotal || 0).toFixed(this._rd())} ${this._ru()} total</span></div>${body}</div>`;
+    return `<div class="p s6"${this._mi('rain')}><div class="h"><b>Daily rain · 30 days</b><span><i class="dot" style="background:#378ADD"></i> ${(this._rainTotal || 0).toFixed(this._rd())} ${this._ru()} total</span></div>${body}</div>`;
   }
 
   _footer() {
@@ -519,7 +531,7 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
     const tr = marks.map(v => `<div>${v}<div class="fl ${t != null && t >= v ? 'on' : ''} ${v === cur ? 'cur' : ''}"></div></div>`).join('');
     const ones = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map(o => `<div><div class="fl ${dg >= 0 && ((o > 0 && o <= dg) || (o === 0 && dg === 0)) ? 'on' : ''}"></div>${o}</div>`).join('');
     const feels = this._e.feels ? ` · feels like ${this._f('feels')}°` : '';
-    return `<div class="s12 ft"><div class="dots"></div><div class="trow" style="grid-template-columns:repeat(${marks.length},minmax(0,1fr))">${tr}</div><div class="fcap">temperature, ${tlcEsc(this._tu())} · ${t == null ? '—' : t.toFixed(1)}${feels}</div><div class="orow">${ones}</div></div>`;
+    return `<div class="s12 ft"${this._mi('temp')}><div class="dots"></div><div class="trow" style="grid-template-columns:repeat(${marks.length},minmax(0,1fr))">${tr}</div><div class="fcap">temperature, ${tlcEsc(this._tu())} · ${t == null ? '—' : t.toFixed(1)}${feels}</div><div class="orow">${ones}</div></div>`;
   }
 }
 

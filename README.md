@@ -12,6 +12,8 @@ charts, 30 days of daily rainfall and a temperature bar.
 - **Visual editor** for the title, layout, scales, thresholds and entities.
 - **Follows your units.** Temperature, wind and pressure use each sensor's
   unit; rain follows your Home Assistant unit system (inches or millimetres).
+- **Tap anything for details.** Every value opens Home Assistant's standard
+  entity dialog with its history, attributes and settings.
 - **Single dependency-free JavaScript module.** No other custom cards,
   card-mod or build step.
 
@@ -65,6 +67,25 @@ The Marketplace registers the dashboard resource for you.
 
 The card is designed for a **Panel** view. In a Sections view it takes the
 full width.
+
+## Tapping the card
+
+Tapping a value opens the same entity dialog you get from the integration's
+device page. The most specific part wins, so tapping the gust figure inside
+the wind scale opens the gust sensor, and tapping elsewhere in that row opens
+wind speed.
+
+| Tap | Opens |
+|-----|-------|
+| Temperature, temperature chart, temperature bar | Air temperature |
+| Condition icon or text, forecasts, conditions panel | Weather entity |
+| "feels like", header stats, dew point text | That sensor |
+| Live / stale indicator | Last update timestamp |
+| Humidity and wind direction dials | Humidity / wind direction |
+| Each scale | Its sensor (gust figure opens wind gust) |
+| Pressure trend / pressure value | Pressure trend / sea-level pressure |
+| Moon phase panel | Moon phase |
+| Wind, pressure and daily rain charts | Wind speed, sea-level pressure, rain today (legend entries open their own sensor) |
 
 ## Visual editor
 
