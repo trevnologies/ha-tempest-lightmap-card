@@ -1,0 +1,48 @@
+name: Validate
+
+# Runs on PRs and pushes to main, plus a daily schedule so a HACS spec
+# change upstream gets caught even if nothing here changed. push: is
+# scoped to main so a push to a PR's own branch doesn't also satisfy an
+# unscoped push trigger and run every check twice.
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hacs:
+    name: HACS
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run HACS validation
+        uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa # main, pinned 2026-08-20
+        with:
+          category: "plugin"
+          # No screenshots in the README yet; remove once images/ exists.
+          ignore: "images"
+
+  js-syntax:
+    name: JS syntax
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The card ships as a single dependency-free ES module, so a parse
+      # check with the runner's preinstalled Node is enough to catch a
+      # broken file before it reaches a release.
+      - name: Parse check
+        run: node --check tempest-lightmap-card.js

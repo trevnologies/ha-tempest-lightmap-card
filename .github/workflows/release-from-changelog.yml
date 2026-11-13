@@ -1,0 +1,125 @@
+name: Release from Changelog
+
+# Fires whenever CHANGELOG.md changes on main, or you trigger it by hand.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'CHANGELOG.md'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 1.0.5). Leave blank to use the top entry in CHANGELOG.md.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CHANGELOG_PATH: CHANGELOG.md
+  CARD_PATH: tempest-lightmap-card.js
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # Pulls the newest version heading out of CHANGELOG.md.
+      # A version heading is any ## or ### line whose first token is a
+      # version number - that's what tells it apart from nested
+      # "### Fixed" / "### Added" / "### Changed" subsection headings.
+      - name: Extract version and release notes
+        id: changelog
+        run: |
+          if [ ! -f "$CHANGELOG_PATH" ]; then
+            echo "No file at $CHANGELOG_PATH" >&2
+            exit 1
+          fi
+
+          INPUT_VERSION="${{ inputs.version }}"
+
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION=$(grep -m 1 -oP '^(##|###)\s+\K[0-9]+\.[0-9]+\.[0-9]+' "$CHANGELOG_PATH")
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "Could not determine a version to release" >&2
+            exit 1
+          fi
+          echo "Releasing version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          # Uses (##|###) instead of #{2,3}: Ubuntu's default awk is mawk,
+          # which doesn't support {n,m} interval regex.
+          awk -v ver="$VERSION" '
+            BEGIN {
+              gsub(/\./, "\\.", ver)
+              start = "^(##|###)[[:space:]]+" ver "([[:space:]]|$)"
+            }
+            $0 ~ start { grabbing = 1; next }
+            grabbing && /^(##|###)[[:space:]]+[0-9]+\.[0-9]+\.[0-9A-Za-z]+/ { exit }
+            grabbing { print }
+          ' "$CHANGELOG_PATH" > release_notes.md
+
+          if [ ! -s release_notes.md ]; then
+            echo "No section found in $CHANGELOG_PATH matching version $VERSION" >&2
+            exit 1
+          fi
+
+      # The download badge only reflects real installs because the card
+      # file is attached as a named release asset (hacs.json filename),
+      # which the Marketplace downloads directly.
+      - name: Assemble release body
+        run: |
+          VERSION="${{ steps.changelog.outputs.version }}"
+          {
+            cat release_notes.md
+            echo ""
+            echo "[![GitHub Release Downloads](https://img.shields.io/github/downloads/trevnologies/ha-tempest-lightmap-card/${VERSION}/total.svg)](https://github.com/trevnologies/ha-tempest-lightmap-card/releases/${VERSION})"
+          } > full_release_body.md
+
+      # Creates the tag only if it doesn't already exist on the remote,
+      # so re-running the workflow never moves a tag that's already shipped.
+      - name: Create tag if it doesn't exist
+        run: |
+          VERSION="${{ steps.changelog.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${VERSION}" >/dev/null 2>&1; then
+            echo "Tag ${VERSION} already exists on origin, leaving it as-is"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "${VERSION}"
+            git push origin "${VERSION}"
+          fi
+
+      # Patches TLC_VERSION to match the release tag in this ephemeral
+      # checkout only - nothing is committed back to main. Keeps the
+      # shipped asset's console banner honest even if the source wasn't
+      # bumped yet. Fails if the constant isn't found exactly once.
+      - name: Sync card version for asset
+        run: |
+          VERSION="${{ steps.changelog.outputs.version }}"
+          COUNT=$(grep -c "^const TLC_VERSION = '" "$CARD_PATH" || true)
+          if [ "$COUNT" != "1" ]; then
+            echo "Expected exactly one TLC_VERSION line in $CARD_PATH, found $COUNT" >&2
+            exit 1
+          fi
+          sed -i "s/^const TLC_VERSION = '[^']*';/const TLC_VERSION = '${VERSION}';/" "$CARD_PATH"
+          node --check "$CARD_PATH"
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ steps.changelog.outputs.version }}
+          name: ${{ steps.changelog.outputs.version }}
+          body_path: full_release_body.md
+          files: tempest-lightmap-card.js
+          draft: false
+          prerelease: false

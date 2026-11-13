@@ -1,0 +1,17 @@
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+.history/
+*.swp
+
+# Tooling
+node_modules/
+*.log
+
+# Local secrets / environment — never commit
+.env
+.env.*
+*.pem
+*.key
+secrets.yaml
