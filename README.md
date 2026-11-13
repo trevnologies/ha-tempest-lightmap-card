@@ -12,7 +12,17 @@ custom cards, no card-mod and no build step.
 
 ## Installation
 
-### Home Assistant Marketplace (custom repository)
+### Home Assistant Marketplace (Recommended)
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=trevnologies&repository=ha-tempest-lightmap-card&category=plugin)
+
+1. Click the badge above. It opens your Home Assistant instance directly to
+   this repository in the Marketplace (requires
+   [My Home Assistant](https://www.home-assistant.io/integrations/my/),
+   on by default for most setups)
+2. Install **Tempest LightMap Card**, then hard-refresh your browser
+
+Or manually:
 
 1. **Settings → Marketplace → Add from link**
 2. Repository: `https://github.com/trevnologies/ha-tempest-lightmap-card`, Type: **Dashboard**
