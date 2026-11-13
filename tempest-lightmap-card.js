@@ -20,6 +20,53 @@ const TLC_WIND = {
   'm/s': [[1, 2, 3, 4, 5, 7, 10, 12, 15, 20, 25], 2.23694], 'kn': [[2, 4, 6, 8, 10, 15, 20, 25, 30, 35, 45], 1.15078],
   'ft/s': [[3, 6, 9, 12, 15, 22, 30, 37, 44, 59, 73], 0.681818]
 };
+// Panels in default order: [id, editor label, entity keys the panel needs, items].
+// Items are [id, label, entity keys] and can be reordered or hidden only
+// within their own panel.
+const TLC_PANELS = [
+  ['header', 'Header', [], [['dew_point', 'Dew point', ['dew']], ['rain_today', 'Rain today', ['rain']], ['lightning', 'Lightning (3h)', ['strikes']], ['sun', 'Sunrise / sunset', ['sun']]]],
+  ['hourly_forecast', '12-hour forecast', [], []],
+  ['daily_forecast', '10-day forecast', [], []],
+  ['humidity', 'Humidity dial', ['hum'], []],
+  ['wind_direction', 'Wind direction dial', ['dir'], []],
+  ['scales', 'Scales', [], [['precipitation', 'Precipitation intensity', ['rate']], ['uv', 'UV index', ['uv']], ['rain_today', 'Rain today', ['rain']], ['wind', 'Wind and gust', ['wind']]]],
+  ['conditions', 'Conditions row', [], [['conditions', 'Conditions', []], ['pressure', 'Pressure trend', ['trend']], ['moon', 'Moon phase', ['moon']]]],
+  ['temperature_chart', 'Temperature · 24h', ['temp'], []],
+  ['wind_chart', 'Wind and gust · 24h', ['wind'], []],
+  ['pressure_chart', 'Pressure · 24h', ['press'], []],
+  ['rain_chart', 'Daily rain · 30 days', ['rain'], []],
+  ['temperature_bar', 'Temperature bar', ['temp'], []]
+];
+const TLC_HALF_ITEMS = ['precipitation', 'uv'];
+const TLC_COND_WIDTH = { conditions: '2.2fr', pressure: '1fr', moon: '1.6fr' };
+const TLC_ENTITY_LABELS = {
+  temp: 'Air temperature', feels: 'Feels like', dew: 'Dew point', hum: 'Humidity', wind: 'Wind speed', gust: 'Wind gust',
+  dir: 'Wind direction', press: 'Sea-level pressure', trend: 'Pressure trend', uv: 'UV index', rate: 'Rain intensity',
+  rain: 'Rain today', strikes: 'Lightning (3h)', heat: 'Heat index', ts: 'Last update', moon: 'Moon phase', sun: 'Sun'
+};
+const TLC_MAX_MARKS = 13;
+
+// Ordered panels/items with hidden flags, from config. Unknown ids are
+// dropped; ids missing from a saved order are appended in default order.
+const tlcLayout = cfg => {
+  const c = cfg || {}, hp = c.hide_panels || [], hi = c.hide_items || [], io = c.items || {};
+  const byId = Object.fromEntries(TLC_PANELS.map(p => [p[0], p]));
+  const order = [...(c.panels || []).filter(id => byId[id]), ...TLC_PANELS.map(p => p[0]).filter(id => !(c.panels || []).includes(id))];
+  return order.filter((id, i) => order.indexOf(id) === i).map(id => {
+    const p = byId[id], ids = p[3].map(it => it[0]), saved = (io[id] || []).filter(x => ids.includes(x));
+    const iorder = [...saved, ...ids.filter(x => !saved.includes(x))].filter((x, i, a) => a.indexOf(x) === i);
+    return { id, label: p[1], needs: p[2], hidden: hp.includes(id),
+      items: iorder.map(x => { const it = p[3].find(q => q[0] === x); return { id: x, label: it[1], needs: it[2], hidden: hi.includes(id + '.' + x) }; }) };
+  });
+};
+// Evenly spaced scale marks, or null if the range is unusable.
+const tlcMarks = r => {
+  if (!r || [r.min, r.max, r.step].some(v => typeof v !== 'number' || isNaN(v)) || r.step <= 0 || r.max < r.min) return null;
+  const out = []; for (let v = r.min; v <= r.max + r.step * 1e-6 && out.length < TLC_MAX_MARKS; v += r.step) out.push(Math.round(v * 1e6) / 1e6);
+  return out.length > 1 ? out : null;
+};
+const tlcDec = v => { const s = String(v); return s.includes('.') ? s.split('.')[1].length : 0; };
+
 const TLC_PRESS_DEC = { inHg: 2, hPa: 0, mbar: 0, kPa: 1, cbar: 1, mmHg: 0, psi: 2, Pa: 0 };
 const tlcEsc = v => String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 const tlcFindWeather = hass => {
@@ -42,7 +89,7 @@ const TLC_CSS = `
 :host{display:block;--off:color-mix(in srgb,var(--primary-text-color) 11%,transparent);--plum:#4B2A5E;--wm:#5B3570;--card:var(--ha-card-background,var(--card-background-color,#fff));--fg:var(--primary-text-color);--fg2:var(--secondary-text-color);--line:var(--divider-color,rgba(0,0,0,.12))}
 :host([dark]){--wm:#CDB0E0}
 .w{container-type:inline-size}
-.g{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px;padding:12px;max-width:1500px;margin:0 auto;box-sizing:border-box}
+.g{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-auto-flow:row dense;gap:12px;padding:12px;max-width:1500px;margin:0 auto;box-sizing:border-box}
 .p{background:var(--card);border:1px solid var(--line);border-radius:var(--ha-card-border-radius,16px);padding:14px 16px;min-width:0;box-sizing:border-box}
 .s12{grid-column:span 12}.s8{grid-column:span 8}.s6{grid-column:span 6}.s4{grid-column:span 4}.s3{grid-column:span 3}
 @container (max-width:1100px){.s8,.s4,.t12{grid-column:span 12}.s3{grid-column:span 6}}
@@ -81,11 +128,11 @@ const TLC_CSS = `
 .rng div{position:absolute;left:0;right:0;border-radius:3px;background:#D85A30}
 .dial{display:flex;flex-direction:column;align-items:center}
 .dial svg{width:100%;max-width:190px}
-.scs{display:grid;gap:16px}
-.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.scs{display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;align-content:start}
+.scs .full{grid-column:1/-1}
 .st{display:grid;grid-template-columns:2.2fr 1fr 1.6fr;gap:28px}
-@container (max-width:900px){.st{grid-template-columns:1fr}}
-@container (max-width:520px){.two{grid-template-columns:1fr}}
+@container (max-width:900px){.st{grid-template-columns:1fr!important}}
+@container (max-width:520px){.scs{grid-template-columns:1fr}}
 .cond{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));text-align:center}
 .cond ha-icon{--mdc-icon-size:26px}
 .cond div{font-size:10px;color:var(--fg2);margin-top:2px}
@@ -97,7 +144,7 @@ svg{display:block}
 svg text{font-family:inherit}
 .ft{background:var(--plum);border-radius:var(--ha-card-border-radius,16px);color:#fff;padding:0 20px 16px;overflow:hidden}
 .dots{height:14px;margin:0 -20px 14px;background:radial-gradient(circle,rgba(255,255,255,.22) 3px,transparent 3.6px) 4px 2px/18px 14px repeat-x}
-.trow{display:grid;grid-template-columns:repeat(11,minmax(0,1fr));gap:6px;text-align:center;font-size:14px}
+.trow{display:grid;gap:6px;text-align:center;font-size:14px}
 .orow{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:6px;text-align:center;font-size:14px;margin:0 4.5%}
 .fl{height:10px;border-radius:5px;background:rgba(255,255,255,.2);margin:7px 0}
 .fl.on{background:#FAC775}.fl.cur{outline:2px solid #fff;outline-offset:2px}
@@ -115,6 +162,8 @@ class TempestLightmapCard extends HTMLElement {
     this._stop();
   }
   static getStubConfig(hass) { const w = tlcFindWeather(hass); return w ? { weather: w } : {}; }
+  static async getConfigElement() { await tlcLoadEditorDeps(); return document.createElement(TLC_TAG + '-editor'); }
+  getGridOptions() { return { columns: 'full', min_columns: 12 }; }
 
   // Works out which entity feeds each part of the card. Runs on first hass and
   // whenever the entity registry changes; restarts data loading if the
@@ -132,6 +181,7 @@ class TempestLightmapCard extends HTMLElement {
     const moonReg = Object.values(reg).find(r => r.platform === 'moon' && r.entity_id.startsWith('sensor.'));
     e.moon = ov.moon || (moonReg ? moonReg.entity_id : (h.states['sensor.moon_phase'] ? 'sensor.moon_phase' : null));
     TLC_DERIVED.forEach(k => { e[k] = ov[k] || null; });
+    (c.exclude || []).forEach(k => { if (k !== 'weather' && k in e) e[k] = null; });
     this._regRef = h.entities;
     if (JSON.stringify(e) !== JSON.stringify(this._e)) {
       this._e = e; this._stop(); this._fc = { hourly: [], daily: [] }; this._h = {}; this._rain = []; this._rainStart = null;
@@ -229,14 +279,26 @@ class TempestLightmapCard extends HTMLElement {
       g.innerHTML = `<div class="p s12 nd">No Tempest weather entity found. Install the Tempest integration, or set <code>weather:</code> in the card config.</div>`;
       return;
     }
-    try { g.innerHTML = this._header() + this._next12() + this._days() + this._hum() + this._windDir() + this._scales() + this._status() + this._charts() + this._footer(); }
+    const has = keys => keys.every(k => this._e[k] && this._st(k));
+    const R = {
+      header: it => this._header(it), hourly_forecast: () => this._next12(), daily_forecast: () => this._days(),
+      humidity: () => this._hum(), wind_direction: () => this._windDir(), scales: it => this._scales(it),
+      conditions: it => this._status(it), temperature_chart: () => this._tempChart(), wind_chart: () => this._windChart(),
+      pressure_chart: () => this._pressChart(), rain_chart: () => this._rainChart(), temperature_bar: () => this._footer()
+    };
+    try {
+      g.innerHTML = tlcLayout(this._cfg).filter(p => !p.hidden && has(p.needs)).map(p => {
+        const items = p.items.filter(i => !i.hidden && has(i.needs)).map(i => i.id);
+        return p.items.length && !items.length ? '' : R[p.id](items);
+      }).join('');
+    }
     catch (err) { g.innerHTML = `<div class="p s12 nd">Tempest card error: ${tlcEsc(err.message)}</div>`; }
   }
 
   _time(d, opt) { return d.toLocaleTimeString([], opt || { hour: 'numeric', minute: '2-digit' }); }
   _hr(d) { return d.toLocaleTimeString([], { hour: 'numeric' }).replace(/\s/g, '').toLowerCase(); }
 
-  _header() {
+  _header(items) {
     const w = this._s('weather'), c = TLC_COND[w] || ['mdi:weather-partly-cloudy', tlcEsc(w) || '—', '#9A9890'];
     const t = this._n('temp'), tu = tlcEsc(this._tu());
     const ts = Date.parse(this._s('ts')), m = isNaN(ts) ? null : Math.max(0, Math.round((Date.now() - ts) / 60000));
@@ -245,10 +307,17 @@ class TempestLightmapCard extends HTMLElement {
     const sunT = sun ? this._time(new Date(up ? sun.attributes.next_setting : sun.attributes.next_rising)) : '—';
     const rain = this._rainNow('rain'), lt = parseInt(this._s('strikes')) || 0;
     const q = (l, v, col) => `<div><div class="lbl">${l}</div><div class="qv"${col ? ` style="color:${col}"` : ''}>${v}</div></div>`;
+    const Q = {
+      dew_point: () => q('Dew point', this._f('dew') + '°'),
+      rain_today: () => q('Rain today', rain == null ? '—' : rain.toFixed(this._rd()) + ' ' + this._ru(), rain ? '#378ADD' : ''),
+      lightning: () => q('Lightning 3h', lt + ' strikes', lt ? '#E5A800' : ''),
+      sun: () => q(up ? 'Sunset' : 'Sunrise', sunT, '#D85A30')
+    };
+    const feels = this._e.feels ? ` · feels like ${this._f('feels')}°` : '';
     return `<div class="p s12 hdr"><div class="tab"><span>${tlcEsc(this._title)}</span></div>
 <div class="brand"><div class="wm">Tempest<sup>°</sup></div><div class="bar"></div><div class="live"><span class="dot" style="background:${ok ? '#639922' : '#EF9F27'}"></span>${ok ? 'Live' : 'Stale'} · ${m == null ? 'no update' : m < 1 ? 'updated just now' : 'updated ' + m + ' min ago'}</div></div>
-<div class="now"><ha-icon icon="${c[0]}" style="color:${c[2]}"></ha-icon><div><div class="big">${t == null ? '—' : t.toFixed(1)}<u>${tu}</u></div><div class="lbl" style="margin-top:6px">${c[1]} · feels like ${this._f('feels')}°</div></div></div>
-<div class="qs">${q('Dew point', this._f('dew') + '°')}${q('Rain today', rain == null ? '—' : rain.toFixed(this._rd()) + ' ' + this._ru(), rain ? '#378ADD' : '')}${q('Lightning 3h', lt + ' strikes', lt ? '#E5A800' : '')}${q(up ? 'Sunset' : 'Sunrise', sunT, '#D85A30')}</div></div>`;
+<div class="now"><ha-icon icon="${c[0]}" style="color:${c[2]}"></ha-icon><div><div class="big">${t == null ? '—' : t.toFixed(1)}<u>${tu}</u></div><div class="lbl" style="margin-top:6px">${c[1]}${feels}</div></div></div>
+${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<div></div>'}</div>`;
   }
 
   _next12() {
@@ -326,32 +395,45 @@ class TempestLightmapCard extends HTMLElement {
     return `<div class="sc" style="grid-template-columns:repeat(${labels.length},minmax(0,1fr))">${labels.map((l, i) => { const c = litFn(i); return `<div class="${c ? 'on' : ''}"><div class="led" style="${c ? 'background:' + c : ''}"></div><span>${l}</span></div>`; }).join('')}</div>`;
   }
 
-  _scales() {
-    const ri = this._rainIn(), ru = this._ru(), rd = this._rd();
-    const rate = this._rainNow('rate') || 0, rl = ri ? [0.1, 0.3] : [2.5, 7.6];
-    const lvl = rate <= 0 ? 0 : rate < rl[0] ? 1 : rate < rl[1] ? 2 : 3;
-    const pi = this._scale(['none', 'light', 'moderate', 'heavy'], i => lvl === 0 ? (i === 0 ? '#9A9890' : '') : (i > 0 && i <= lvl ? ['', '#85B7EB', '#378ADD', '#185FA5'][i] : ''));
-    const uv = this._n('uv') || 0, ul = uv < 3 ? 0 : uv < 6 ? 1 : uv < 8 ? 2 : uv < 11 ? 3 : 4, uc = ['#639922', '#E5C100', '#EF9F27', '#E24B4A', '#9B59B6'];
-    const uvs = this._scale(['low', 'moderate', 'high', 'very high', 'extreme'], i => i <= ul ? uc[i] : '');
-    const r = this._rainNow('rain') || 0;
-    const rt = ri ? [0.2, 0.4, 0.6, 0.8, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0] : [5, 10, 15, 20, 25, 30, 40, 50, 65, 75];
-    const acc = this._scale(rt.map(v => ri ? v.toFixed(v < 1 || v % 1 ? (v * 100 % 10 ? 2 : 1) : 1) : String(v)), i => r >= rt[i] ? '#378ADD' : '');
-    const wu = this._wu(), w = this._n('wind') || 0, gu = this._n('gust') || 0, wt = TLC_WIND[wu][0];
-    const wg = this._scale(wt, i => w >= wt[i] ? '#EF9F27' : gu >= wt[i] ? '#FAC775' : '');
-    return `<div class="p s6 t12 scs">
-<div class="two"><div><div class="h"><b>Precipitation intensity</b><span>${rate.toFixed(rd)} ${ru}/hr</span></div>${pi}</div><div><div class="h"><b>UV index</b><span>${uv.toFixed(1)}</span></div>${uvs}</div></div>
-<div><div class="h"><b>Rain today, ${ru}</b><span>${r.toFixed(rd)} ${ru} · ${tlcEsc(this._sinceRain())} days since rain</span></div>${acc}</div>
-<div><div class="h"><b>Wind and gust, ${tlcEsc(wu)}</b><span><i class="dot" style="background:#EF9F27"></i> ${w.toFixed(1)} wind · <i class="dot" style="background:#FAC775"></i> ${gu.toFixed(1)} gust</span></div>${wg}</div></div>`;
+  _scales(items) {
+    const ri = this._rainIn(), ru = this._ru(), rd = this._rd(), c = this._cfg;
+    const out = {};
+    out.precipitation = () => {
+      const rate = this._rainNow('rate') || 0, th = c.rain_intensity || {};
+      const rl = [th.moderate != null ? th.moderate : ri ? 0.1 : 2.5, th.heavy != null ? th.heavy : ri ? 0.3 : 7.6];
+      const lvl = rate <= 0 ? 0 : rate < rl[0] ? 1 : rate < rl[1] ? 2 : 3;
+      const pi = this._scale(['none', 'light', 'moderate', 'heavy'], i => lvl === 0 ? (i === 0 ? '#9A9890' : '') : (i > 0 && i <= lvl ? ['', '#85B7EB', '#378ADD', '#185FA5'][i] : ''));
+      return `<div class="h"><b>Precipitation intensity</b><span>${rate.toFixed(rd)} ${ru}/hr</span></div>${pi}`;
+    };
+    out.uv = () => {
+      const uv = this._n('uv') || 0, ul = uv < 3 ? 0 : uv < 6 ? 1 : uv < 8 ? 2 : uv < 11 ? 3 : 4, uc = ['#639922', '#E5C100', '#EF9F27', '#E24B4A', '#9B59B6'];
+      return `<div class="h"><b>UV index</b><span>${uv.toFixed(1)}</span></div>${this._scale(['low', 'moderate', 'high', 'very high', 'extreme'], i => i <= ul ? uc[i] : '')}`;
+    };
+    out.rain_today = () => {
+      const r = this._rainNow('rain') || 0, custom = tlcMarks(c.rain_scale);
+      const rt = custom || (ri ? [0.2, 0.4, 0.6, 0.8, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0] : [5, 10, 15, 20, 25, 30, 40, 50, 65, 75]);
+      const dec = custom ? Math.max(tlcDec(c.rain_scale.min), tlcDec(c.rain_scale.step)) : null;
+      const labels = rt.map(v => custom ? v.toFixed(dec) : ri ? v.toFixed(v < 1 || v % 1 ? (v * 100 % 10 ? 2 : 1) : 1) : String(v));
+      return `<div class="h"><b>Rain today, ${ru}</b><span>${r.toFixed(rd)} ${ru} · ${tlcEsc(this._sinceRain())} days since rain</span></div>${this._scale(labels, i => r >= rt[i] ? '#378ADD' : '')}`;
+    };
+    out.wind = () => {
+      const wu = this._wu(), w = this._n('wind') || 0, gu = this._n('gust') || 0, custom = tlcMarks(c.wind_scale), wt = custom || TLC_WIND[wu][0];
+      const dec = custom ? Math.max(tlcDec(c.wind_scale.min), tlcDec(c.wind_scale.step)) : 0;
+      return `<div class="h"><b>Wind and gust, ${tlcEsc(wu)}</b><span><i class="dot" style="background:#EF9F27"></i> ${w.toFixed(1)} wind${this._e.gust ? ` · <i class="dot" style="background:#FAC775"></i> ${gu.toFixed(1)} gust` : ''}</span></div>${this._scale(wt.map(v => v.toFixed(dec)), i => w >= wt[i] ? '#EF9F27' : gu >= wt[i] ? '#FAC775' : '')}`;
+    };
+    return `<div class="p s6 t12 scs">${items.map(i => `<div${TLC_HALF_ITEMS.includes(i) ? '' : ' class="full"'}>${out[i]()}</div>`).join('')}</div>`;
   }
 
-  _status() {
+  _status(items) {
     const w = this._s('weather'), raining = this._isRaining(), lt = (parseInt(this._s('strikes')) || 0) > 0;
-    const wind = (this._n('wind') || 0) * TLC_WIND[this._wu()][1], heat = this._n('heat'), hot = this._isF() ? 95 : 35;
+    const al = this._cfg.alerts || {}, wf = TLC_WIND[this._wu()][1];
+    const hot = al.heat != null ? al.heat : this._isF() ? 95 : 35, windy = al.wind != null ? al.wind : Math.round(20 / wf);
+    const wind = this._n('wind') || 0, heat = this._n('heat');
     const C = [
       ['mdi:weather-sunny', 'sun', w === 'sunny', '#EF9F27'], ['mdi:weather-night', 'clear', w === 'clear-night', '#7F77DD'],
       ['mdi:weather-cloudy', 'cloud', ['cloudy', 'partlycloudy'].includes(w), '#9A9890'], ['mdi:water', 'rain', raining || ['rainy', 'pouring', 'lightning-rainy'].includes(w), '#378ADD'],
       ['mdi:snowflake', 'snow', ['snowy', 'snowy-rainy', 'hail'].includes(w), '#85B7EB'], ['mdi:flash', 'lightning', lt || ['lightning', 'lightning-rainy'].includes(w), '#E24B4A'],
-      ['mdi:weather-fog', 'fog', w === 'fog', '#9A9890'], ['mdi:weather-windy', 'wind', wind >= 20 || ['windy', 'windy-variant'].includes(w), '#5DCAA5'],
+      ['mdi:weather-fog', 'fog', w === 'fog', '#9A9890'], ['mdi:weather-windy', 'wind', wind >= windy || ['windy', 'windy-variant'].includes(w), '#5DCAA5'],
       ['mdi:thermometer-high', 'heat', heat != null && heat >= hot, '#D85A30'], ['mdi:alert-outline', 'alert', w === 'exceptional', '#E24B4A']
     ];
     const cond = `<div class="cond">${C.map(c => `<div style="color:${c[2] ? c[3] : 'var(--off)'}"><ha-icon icon="${c[0]}"></ha-icon><div style="color:${c[2] ? 'var(--primary-text-color)' : 'var(--secondary-text-color)'}">${c[1]}</div></div>`).join('')}</div>`;
@@ -361,8 +443,13 @@ class TempestLightmapCard extends HTMLElement {
     const moon = `<div class="moon">${TLC_MOON.map(m => `<div style="color:${m[0] === mp ? '#7F77DD' : 'var(--off)'}"><ha-icon icon="${m[1]}"></ha-icon><span style="color:${m[0] === mp ? 'var(--primary-text-color)' : 'var(--secondary-text-color)'}">${m[2] || '&nbsp;'}</span></div>`).join('')}</div>`;
     const ml = mp ? tlcEsc(mp.replace(/_/g, ' ')) : '—';
     const cl = tlcEsc((TLC_COND[w] || [0, w || '—'])[1]);
-    const cols = this._e.moon ? '' : ' style="grid-template-columns:2.2fr 1fr"';
-    return `<div class="p s12 st"${cols}><div><div class="h l"><b>Conditions</b><span>${cl}</span></div>${cond}</div><div><div class="h c"><b>Pressure</b><span>${this._f('press', this._pd())} ${tlcEsc(this._pu())}</span></div>${pt}</div>${this._e.moon ? `<div><div class="h r"><b>Moon phase</b><span>${ml}</span></div>${moon}</div>` : ''}</div>`;
+    const out = {
+      conditions: a => `<div><div class="h ${a}"><b>Conditions</b><span>${cl}</span></div>${cond}</div>`,
+      pressure: a => `<div><div class="h ${a}"><b>Pressure</b><span>${this._f('press', this._pd())} ${tlcEsc(this._pu())}</span></div>${pt}</div>`,
+      moon: a => `<div><div class="h ${a}"><b>Moon phase</b><span>${ml}</span></div>${moon}</div>`
+    };
+    const n = items.length, align = i => n === 1 ? 'c' : i === 0 ? 'l' : i === n - 1 ? 'r' : 'c';
+    return `<div class="p s12 st" style="grid-template-columns:${items.map(i => TLC_COND_WIDTH[i]).join(' ')}">${items.map((i, k) => out[i](align(k))).join('')}</div>`;
   }
 
   _line(series, span, dec) {
@@ -392,14 +479,19 @@ class TempestLightmapCard extends HTMLElement {
     return `<svg viewBox="0 0 600 150" width="100%">${s}</svg>`;
   }
 
-  _charts() {
-    const e = this._e, h = this._h, D = 864e5;
-    const head = (t, items) => `<div class="h"><b>${t}</b><span>${items.map(i => `<i class="dot" style="background:${i[1]}"></i> ${i[0]}`).join(' &nbsp; ')}</span></div>`;
-    const temp = `<div class="p s6">${head('Temperature · 24h', [[`air ${this._f('temp', 1)}°`, '#D85A30'], [`dew point ${this._f('dew')}°`, '#26A3C6']])}${this._line([{ pts: h[e.temp], color: '#D85A30' }, { pts: h[e.dew], color: '#26A3C6', w: 1.5 }], D, 0)}</div>`;
-    const wind = `<div class="p s6">${head('Wind and gust · 24h', [[`wind ${this._f('wind', 1)}`, '#EF9F27'], [`gust ${this._f('gust', 1)} ${tlcEsc(this._wu())}`, '#E24B4A']])}${this._line([{ pts: h[e.wind], color: '#EF9F27', zero: true }, { pts: h[e.gust], color: '#E24B4A', agg: 'max', w: 1.5 }], D, 0)}</div>`;
-    const pd = this._pd(), [pmin, pmax] = this._pRange();
-    const pr = `<div class="p s6">${head('Pressure · 24h', [[`${this._f('press', pd)} ${tlcEsc(this._pu())}`, '#7F77DD'], [`range ${pmin}–${pmax}`, 'var(--off)']])}${this._line([{ pts: h[e.press], color: '#7F77DD' }], D, pd)}</div>`;
-    return temp + wind + pr + this._rainChart();
+  _head(t, items) { return `<div class="h"><b>${t}</b><span>${items.map(i => `<i class="dot" style="background:${i[1]}"></i> ${i[0]}`).join(' &nbsp; ')}</span></div>`; }
+  _tempChart() {
+    const e = this._e, h = this._h, dew = e.dew ? [[`dew point ${this._f('dew')}°`, '#26A3C6']] : [];
+    return `<div class="p s6">${this._head('Temperature · 24h', [[`air ${this._f('temp', 1)}°`, '#D85A30'], ...dew])}${this._line([{ pts: h[e.temp], color: '#D85A30' }, { pts: h[e.dew], color: '#26A3C6', w: 1.5 }], 864e5, 0)}</div>`;
+  }
+  _windChart() {
+    const e = this._e, h = this._h, wu = tlcEsc(this._wu());
+    const items = e.gust ? [[`wind ${this._f('wind', 1)}`, '#EF9F27'], [`gust ${this._f('gust', 1)} ${wu}`, '#E24B4A']] : [[`wind ${this._f('wind', 1)} ${wu}`, '#EF9F27']];
+    return `<div class="p s6">${this._head('Wind and gust · 24h', items)}${this._line([{ pts: h[e.wind], color: '#EF9F27', zero: true }, { pts: h[e.gust], color: '#E24B4A', agg: 'max', w: 1.5 }], 864e5, 0)}</div>`;
+  }
+  _pressChart() {
+    const e = this._e, h = this._h, pd = this._pd(), [pmin, pmax] = this._pRange();
+    return `<div class="p s6">${this._head('Pressure · 24h', [[`${this._f('press', pd)} ${tlcEsc(this._pu())}`, '#7F77DD'], [`range ${pmin}–${pmax}`, 'var(--off)']])}${this._line([{ pts: h[e.press], color: '#7F77DD' }], 864e5, pd)}</div>`;
   }
 
   _rainChart() {
@@ -421,16 +513,223 @@ class TempestLightmapCard extends HTMLElement {
   }
 
   _footer() {
-    const t = this._n('temp'), isF = this._isF(), step = isF ? 10 : 5;
-    const tens = isF ? [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110] : [-10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40];
-    const ft = t == null ? NaN : Math.floor(t / step) * step, dg = t == null ? -1 : ((Math.floor(t) % 10) + 10) % 10;
-    const tr = tens.map(v => `<div>${v}<div class="fl ${t != null && t >= v ? 'on' : ''} ${v === ft ? 'cur' : ''}"></div></div>`).join('');
+    const t = this._n('temp'), isF = this._isF(), tb = this._cfg.temperature_bar;
+    const marks = tlcMarks(tb) || (isF ? [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110] : [-10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40]);
+    const cur = t == null ? NaN : marks.filter(v => t >= v).pop(), dg = t == null ? -1 : ((Math.floor(t) % 10) + 10) % 10;
+    const tr = marks.map(v => `<div>${v}<div class="fl ${t != null && t >= v ? 'on' : ''} ${v === cur ? 'cur' : ''}"></div></div>`).join('');
     const ones = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map(o => `<div><div class="fl ${dg >= 0 && ((o > 0 && o <= dg) || (o === 0 && dg === 0)) ? 'on' : ''}"></div>${o}</div>`).join('');
-    return `<div class="s12 ft"><div class="dots"></div><div class="trow">${tr}</div><div class="fcap">temperature, ${tlcEsc(this._tu())} · ${t == null ? '—' : t.toFixed(1)} · feels like ${this._f('feels')}°</div><div class="orow">${ones}</div></div>`;
+    const feels = this._e.feels ? ` · feels like ${this._f('feels')}°` : '';
+    return `<div class="s12 ft"><div class="dots"></div><div class="trow" style="grid-template-columns:repeat(${marks.length},minmax(0,1fr))">${tr}</div><div class="fcap">temperature, ${tlcEsc(this._tu())} · ${t == null ? '—' : t.toFixed(1)}${feels}</div><div class="orow">${ones}</div></div>`;
+  }
+}
+
+// ---------------------------------------------------------------- editor
+// ha-form and the entity picker are lazy-loaded by HA; opening a built-in
+// card's editor once guarantees they are registered before ours renders.
+const tlcLoadEditorDeps = async () => {
+  if (customElements.get('ha-form') && customElements.get('ha-entity-picker')) return;
+  try {
+    const helpers = await window.loadCardHelpers();
+    const card = await helpers.createCardElement({ type: 'entities', entities: [] });
+    if (card && card.constructor.getConfigElement) await card.constructor.getConfigElement();
+  } catch (e) { /* the editor still renders; HA will upgrade elements once they load */ }
+};
+
+const TLC_SCALE_FIELDS = [
+  ['temperature_bar', 'Temperature bar', ['min', 'max', 'step']],
+  ['rain_scale', 'Rain today scale', ['min', 'max', 'step']],
+  ['wind_scale', 'Wind scale', ['min', 'max', 'step']],
+  ['rain_intensity', 'Rain intensity thresholds (per hour)', ['moderate', 'heavy']],
+  ['alerts', 'Condition alerts', ['heat', 'wind']]
+];
+
+// Flat ha-form data <-> card config. Keys equal to defaults are left out of
+// the config so the saved YAML stays minimal.
+const tlcToForm = cfg => {
+  const c = cfg || {}, d = { title: c.title || '', weather: c.weather || '' };
+  TLC_SCALE_FIELDS.forEach(([k, , f]) => f.forEach(x => { const v = (c[k] || {})[x]; if (v != null) d[k + '__' + x] = v; }));
+  Object.keys(TLC_ENTITY_LABELS).forEach(k => { d['inc__' + k] = !(c.exclude || []).includes(k); d['ent__' + k] = (c.entities || {})[k] || ''; });
+  return d;
+};
+const tlcFromForm = (cfg, d) => {
+  const c = Object.assign({}, cfg);
+  ['title', 'weather'].forEach(k => { if (d[k]) c[k] = d[k]; else delete c[k]; });
+  TLC_SCALE_FIELDS.forEach(([k, , f]) => {
+    const o = {}; f.forEach(x => { const v = d[k + '__' + x]; if (v !== undefined && v !== null && v !== '' && !isNaN(Number(v))) o[x] = Number(v); });
+    if (Object.keys(o).length) c[k] = o; else delete c[k];
+  });
+  const ex = Object.keys(TLC_ENTITY_LABELS).filter(k => d['inc__' + k] === false);
+  if (ex.length) c.exclude = ex; else delete c.exclude;
+  const ov = Object.assign({}, c.entities || {});
+  Object.keys(TLC_ENTITY_LABELS).forEach(k => { if (d['ent__' + k]) ov[k] = d['ent__' + k]; else delete ov[k]; });
+  if (Object.keys(ov).length) c.entities = ov; else delete c.entities;
+  return c;
+};
+// Layout list -> config keys (panels, items, hide_panels, hide_items).
+const tlcLayoutToCfg = (cfg, layout) => {
+  const c = Object.assign({}, cfg), def = TLC_PANELS.map(p => p[0]);
+  const order = layout.map(p => p.id), items = {}, hp = [], hi = [];
+  layout.forEach(p => {
+    if (p.hidden) hp.push(p.id);
+    const io = p.items.map(i => i.id), di = TLC_PANELS.find(q => q[0] === p.id)[3].map(i => i[0]);
+    if (io.join() !== di.join()) items[p.id] = io;
+    p.items.forEach(i => { if (i.hidden) hi.push(p.id + '.' + i.id); });
+  });
+  if (order.join() !== def.join()) c.panels = order; else delete c.panels;
+  if (Object.keys(items).length) c.items = items; else delete c.items;
+  if (hp.length) c.hide_panels = hp; else delete c.hide_panels;
+  if (hi.length) c.hide_items = hi; else delete c.hide_items;
+  return c;
+};
+
+const TLC_EDITOR_CSS = `
+.sec{margin:16px 0 4px;font-weight:500;font-size:15px}
+.hint{color:var(--secondary-text-color);font-size:12px;margin:0 0 8px}
+.lay{border:1px solid var(--divider-color);border-radius:8px;overflow:hidden}
+.row{display:flex;align-items:center;gap:8px;padding:6px 10px;border-top:1px solid var(--divider-color)}
+.row:first-child{border-top:0}
+.row.sub{padding-left:38px;background:color-mix(in srgb,var(--primary-text-color) 3%,transparent)}
+.row.off .lab{opacity:.45}
+.lab{flex:1}
+.row button{background:none;border:1px solid var(--divider-color);border-radius:6px;color:var(--primary-text-color);width:28px;height:26px;cursor:pointer;font-size:11px}
+.row button:disabled{opacity:.3;cursor:default}
+.reset{margin-top:8px;background:none;border:1px solid var(--divider-color);border-radius:6px;color:var(--primary-color);padding:4px 10px;cursor:pointer}
+`;
+
+class TempestLightmapCardEditor extends HTMLElement {
+  setConfig(c) {
+    this._cfg = Object.assign({}, c || {});
+    if (this._built) { this._syncForms(); this._renderLayout(); }
+  }
+  set hass(h) {
+    this._hass = h;
+    (this._forms || []).forEach(f => { f.hass = h; });
+    if (!this._built && this._cfg) this._build();
+    else if (this._built) this._syncForms();
+  }
+  connectedCallback() { if (!this._built && this._cfg && this._hass) this._build(); }
+
+  _emit(c) {
+    this._cfg = c;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: c }, bubbles: true, composed: true }));
+  }
+
+  _schemas() {
+    const tu = this._unit('temp', '°F'), wu = this._unit('wind', 'mph');
+    const us = this._hass && this._hass.config && this._hass.config.unit_system, ri = us ? us.length === 'mi' : tu.includes('F');
+    const ru = ri ? 'in' : 'mm', isF = tu.includes('F');
+    const defaults = {
+      temperature_bar: isF ? { min: 10, max: 110, step: 10 } : { min: -10, max: 40, step: 5 },
+      rain_scale: ri ? 'default 0.2–3.0 in (uneven steps)' : 'default 5–75 mm (uneven steps)',
+      wind_scale: 'default ' + (TLC_WIND[wu] ? TLC_WIND[wu][0][0] + '–' + TLC_WIND[wu][0].slice(-1)[0] : '2–50') + ' ' + wu + ' (uneven steps)',
+      rain_intensity: ri ? { moderate: 0.1, heavy: 0.3 } : { moderate: 2.5, heavy: 7.6 },
+      alerts: { heat: isF ? 95 : 35, wind: Math.round(20 / (TLC_WIND[wu] ? TLC_WIND[wu][1] : 1)) }
+    };
+    this._defaults = defaults; this._units = { temperature_bar: tu, rain_scale: ru, wind_scale: wu, rain_intensity: ru + '/hr', alerts: { heat: tu, wind: wu } };
+    const num = { number: { mode: 'box', step: 'any' } };
+    return {
+      general: [{ name: 'title', selector: { text: {} } }, { name: 'weather', selector: { entity: { domain: 'weather' } } }],
+      scales: TLC_SCALE_FIELDS.map(([k, title, f]) => ({ type: 'expandable', name: '', title, schema: [{ type: 'grid', name: '', schema: f.map(x => ({ name: k + '__' + x, selector: num })) }] })),
+      entities: [{ type: 'expandable', name: '', title: 'Entities', schema: Object.keys(TLC_ENTITY_LABELS).map(k => ({ type: 'grid', name: '', schema: [
+        { name: 'inc__' + k, selector: { boolean: {} } },
+        { name: 'ent__' + k, selector: { entity: { domain: k === 'sun' ? 'sun' : 'sensor' } } }
+      ] })) }]
+    };
+  }
+  _unit(k, fb) {
+    const r = this._resolved(), s = r && r[k] && this._hass.states[r[k]];
+    return (s && s.attributes.unit_of_measurement) || fb;
+  }
+  // What the card would auto-detect (ignoring exclusions), cached per config/registry.
+  _resolved() {
+    if (!this._hass) return null;
+    const key = JSON.stringify([this._cfg.weather, this._cfg.entities]);
+    if (this._rMemo && this._rMemo.key === key && this._rMemo.reg === this._hass.entities) return this._rMemo.e;
+    const probe = Object.create(TempestLightmapCard.prototype);
+    probe._hass = this._hass; probe._cfg = Object.assign({}, this._cfg, { exclude: [] }); probe._e = null; probe._stop = () => {};
+    probe._resolve();
+    this._rMemo = { key, reg: this._hass.entities, e: probe._e };
+    return probe._e;
+  }
+  _label(s) {
+    const n = s.name;
+    if (n === 'title') return 'Title';
+    if (n === 'weather') return 'Weather entity';
+    if (n.startsWith('inc__')) return 'Show ' + TLC_ENTITY_LABELS[n.slice(5)];
+    if (n.startsWith('ent__')) return TLC_ENTITY_LABELS[n.slice(5)] + ' entity';
+    const [k, x] = n.split('__'), u = this._units[k];
+    return x.charAt(0).toUpperCase() + x.slice(1) + ' (' + (typeof u === 'object' ? u[x] : u) + ')';
+  }
+  _helper(s) {
+    const n = s.name, r = this._resolved() || {};
+    if (n === 'title') return 'Text on the side tab. Default: Weather station';
+    if (n === 'weather') return r.weather ? 'Blank = auto: ' + r.weather : 'No Tempest weather entity found; pick one';
+    if (n.startsWith('ent__')) { const a = r[n.slice(5)]; return a ? 'Blank = auto: ' + a : 'Not found automatically'; }
+    if (n.startsWith('inc__')) return '';
+    const [k, x] = n.split('__'), d = this._defaults[k];
+    if (typeof d === 'string') return x === 'min' ? d + '. Set min, max and step to replace it.' : '';
+    return 'Default: ' + d[x];
+  }
+
+  _build() {
+    this._built = true;
+    const sr = this.shadowRoot || this.attachShadow({ mode: 'open' });
+    sr.innerHTML = `<style>${TLC_EDITOR_CSS}</style>
+<div id="general"></div>
+<div class="sec">Layout</div><div class="hint">Toggle and reorder panels, and the items inside a panel.</div>
+<div class="lay" id="lay"></div><button class="reset" id="reset">Reset layout to default</button>
+<div class="sec">Scales and thresholds</div><div class="hint">Leave blank to use the defaults for your units.</div>
+<div id="scales"></div>
+<div class="sec">Entities</div><div class="hint">Turn off anything you don't want shown; the card hides every part that uses it.</div>
+<div id="entities"></div>`;
+    const sch = this._schemas();
+    this._forms = ['general', 'scales', 'entities'].map(id => {
+      const f = document.createElement('ha-form');
+      f.hass = this._hass; f.schema = sch[id]; f.data = tlcToForm(this._cfg);
+      f.computeLabel = s => this._label(s); f.computeHelper = s => this._helper(s);
+      f.addEventListener('value-changed', ev => { ev.stopPropagation(); this._emit(tlcFromForm(this._cfg, Object.assign(tlcToForm(this._cfg), ev.detail.value))); });
+      sr.getElementById(id).appendChild(f);
+      return f;
+    });
+    sr.getElementById('reset').addEventListener('click', () => {
+      const c = Object.assign({}, this._cfg); ['panels', 'items', 'hide_panels', 'hide_items'].forEach(k => delete c[k]);
+      this._emit(c); this._renderLayout();
+    });
+    this._renderLayout();
+  }
+  _syncForms() {
+    if (!this._forms) return;
+    const d = tlcToForm(this._cfg), sch = this._schemas();
+    this._forms.forEach((f, i) => { f.data = d; f.schema = sch[['general', 'scales', 'entities'][i]]; });
+  }
+  _renderLayout() {
+    const box = this.shadowRoot && this.shadowRoot.getElementById('lay');
+    if (!box) return;
+    const L = tlcLayout(this._cfg), row = (label, hidden, sub, up, down, keys) =>
+      `<div class="row${sub ? ' sub' : ''}${hidden ? ' off' : ''}"><input type="checkbox" data-k="${keys}" data-a="t" ${hidden ? '' : 'checked'}><span class="lab">${tlcEsc(label)}</span>` +
+      `<button data-k="${keys}" data-a="u" ${up ? '' : 'disabled'} title="Move up">▲</button><button data-k="${keys}" data-a="d" ${down ? '' : 'disabled'} title="Move down">▼</button></div>`;
+    box.innerHTML = L.map((p, pi) => row(p.label, p.hidden, false, pi > 0, pi < L.length - 1, pi) +
+      p.items.map((it, ii) => row(it.label, it.hidden, true, ii > 0, ii < p.items.length - 1, pi + '.' + ii)).join('')).join('');
+    box.querySelectorAll('[data-a]').forEach(el => el.addEventListener(el.tagName === 'INPUT' ? 'change' : 'click', () => {
+      const L2 = tlcLayout(this._cfg), [pi, ii] = el.dataset.k.split('.').map(Number), a = el.dataset.a;
+      const list = ii == null || isNaN(ii) ? L2 : L2[pi].items, i = ii == null || isNaN(ii) ? pi : ii;
+      if (a === 't') list[i].hidden = !el.checked;
+      else { const j = a === 'u' ? i - 1 : i + 1; [list[i], list[j]] = [list[j], list[i]]; }
+      this._emit(tlcLayoutToCfg(this._cfg, L2)); this._renderLayout();
+    }));
   }
 }
 
 if (!customElements.get(TLC_TAG)) customElements.define(TLC_TAG, class extends TempestLightmapCard {});
+if (!customElements.get(TLC_TAG + '-editor')) customElements.define(TLC_TAG + '-editor', class extends TempestLightmapCardEditor {});
 window.customCards = window.customCards || [];
-if (!window.customCards.find(c => c.type === TLC_TAG)) window.customCards.push({ type: TLC_TAG, name: TLC_NAME, description: 'LightMap-inspired Tempest weather station dashboard', preview: true, documentationURL: 'https://github.com/trevnologies/ha-tempest-lightmap-card' });
+if (!window.customCards.find(c => c.type === TLC_TAG)) window.customCards.push({
+  type: TLC_TAG, name: TLC_NAME, description: 'LightMap-inspired Tempest weather station dashboard', preview: true,
+  documentationURL: 'https://github.com/trevnologies/ha-tempest-lightmap-card',
+  // HA 2026.6+: offer this card in the picker's Community section for Tempest weather entities.
+  getEntitySuggestion: (hass, entityId) => {
+    const r = hass && hass.entities && hass.entities[entityId];
+    return entityId.startsWith('weather.') && r && r.platform === 'tempest' ? { config: { type: 'custom:' + TLC_TAG, weather: entityId } } : null;
+  }
+});
 console.info(`%c ${TLC_TAG.toUpperCase()} %c ${TLC_VERSION} `, 'background:#4B2A5E;color:#fff', 'background:#FAC775;color:#4B2A5E');
