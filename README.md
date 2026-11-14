@@ -56,9 +56,9 @@ The Marketplace registers the dashboard resource for you.
 
 ## Adding the card
 
-- **Card picker:** select your Tempest weather entity when adding a card and
-  pick **Tempest LightMap Card** under *Community* (Home Assistant 2026.6+),
-  or search for it by name.
+- **Card picker:** in **By entity**, select your Tempest weather entity or
+  any Tempest sensor and pick **Tempest LightMap Card** under *Community*
+  (Home Assistant 2026.6+). Or find it in **By card**.
 - **YAML:** the minimal configuration is just the type:
 
   ```yaml

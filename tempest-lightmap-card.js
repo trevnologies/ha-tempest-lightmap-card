@@ -605,6 +605,7 @@ const TLC_EDITOR_CSS = `
 .lab{flex:1}
 .row button{background:none;border:1px solid var(--divider-color);border-radius:6px;color:var(--primary-text-color);width:28px;height:26px;cursor:pointer;font-size:11px}
 .row button:disabled{opacity:.3;cursor:default}
+.grp{margin:12px 0 4px;font-size:13px;font-weight:500;color:var(--secondary-text-color)}
 .reset{margin-top:8px;background:none;border:1px solid var(--divider-color);border-radius:6px;color:var(--primary-color);padding:4px 10px;cursor:pointer}
 `;
 
@@ -641,7 +642,8 @@ class TempestLightmapCardEditor extends HTMLElement {
     const num = { number: { mode: 'box', step: 'any' } };
     return {
       general: [{ name: 'title', selector: { text: {} } }, { name: 'weather', selector: { entity: { domain: 'weather' } } }],
-      scales: TLC_SCALE_FIELDS.map(([k, title, f]) => ({ type: 'expandable', name: '', title, schema: [{ type: 'grid', name: '', schema: f.map(x => ({ name: k + '__' + x, selector: num })) }] })),
+      // One plain form per group: several same-named expandables in one ha-form render nothing.
+      scales: TLC_SCALE_FIELDS.map(([k, , f]) => [{ type: 'grid', name: k, flatten: true, schema: f.map(x => ({ name: k + '__' + x, selector: num })) }]),
       entities: [{ type: 'expandable', name: '', title: 'Entities', schema: Object.keys(TLC_ENTITY_LABELS).map(k => ({ type: 'grid', name: '', schema: [
         { name: 'inc__' + k, selector: { boolean: {} } },
         { name: 'ent__' + k, selector: { entity: { domain: k === 'sun' ? 'sun' : 'sensor' } } }
@@ -691,13 +693,14 @@ class TempestLightmapCardEditor extends HTMLElement {
 <div class="sec">Layout</div><div class="hint">Toggle and reorder panels, and the items inside a panel.</div>
 <div class="lay" id="lay"></div><button class="reset" id="reset">Reset layout to default</button>
 <div class="sec">Scales and thresholds</div><div class="hint">Leave blank to use the defaults for your units.</div>
-<div id="scales"></div>
+${TLC_SCALE_FIELDS.map(([k, title]) => `<div class="grp">${tlcEsc(title)}</div><div id="sc_${k}"></div>`).join('')}
 <div class="sec">Entities</div><div class="hint">Turn off anything you don't want shown; the card hides every part that uses it.</div>
 <div id="entities"></div>`;
     const sch = this._schemas();
-    this._forms = ['general', 'scales', 'entities'].map(id => {
+    this._formIds = ['general', ...TLC_SCALE_FIELDS.map(g => 'sc_' + g[0]), 'entities'];
+    this._forms = this._formIds.map(id => {
       const f = document.createElement('ha-form');
-      f.hass = this._hass; f.schema = sch[id]; f.data = tlcToForm(this._cfg);
+      f.hass = this._hass; f.schema = this._schemaFor(sch, id); f.data = tlcToForm(this._cfg);
       f.computeLabel = s => this._label(s); f.computeHelper = s => this._helper(s);
       f.addEventListener('value-changed', ev => { ev.stopPropagation(); this._emit(tlcFromForm(this._cfg, Object.assign(tlcToForm(this._cfg), ev.detail.value))); });
       sr.getElementById(id).appendChild(f);
@@ -712,8 +715,9 @@ class TempestLightmapCardEditor extends HTMLElement {
   _syncForms() {
     if (!this._forms) return;
     const d = tlcToForm(this._cfg), sch = this._schemas();
-    this._forms.forEach((f, i) => { f.data = d; f.schema = sch[['general', 'scales', 'entities'][i]]; });
+    this._forms.forEach((f, i) => { f.data = d; f.schema = this._schemaFor(sch, this._formIds[i]); });
   }
+  _schemaFor(sch, id) { return id.startsWith('sc_') ? sch.scales[TLC_SCALE_FIELDS.findIndex(g => 'sc_' + g[0] === id)] : sch[id]; }
   _renderLayout() {
     const box = this.shadowRoot && this.shadowRoot.getElementById('lay');
     if (!box) return;
@@ -739,9 +743,13 @@ if (!window.customCards.find(c => c.type === TLC_TAG)) window.customCards.push({
   type: TLC_TAG, name: TLC_NAME, description: 'LightMap-inspired Tempest weather station dashboard', preview: true,
   documentationURL: 'https://github.com/trevnologies/ha-tempest-lightmap-card',
   // HA 2026.6+: offer this card in the picker's Community section for Tempest weather entities.
+  // Matches the Tempest weather entity or any Tempest entity on the same device.
   getEntitySuggestion: (hass, entityId) => {
-    const r = hass && hass.entities && hass.entities[entityId];
-    return entityId.startsWith('weather.') && r && r.platform === 'tempest' ? { config: { type: 'custom:' + TLC_TAG, weather: entityId } } : null;
+    const reg = (hass && hass.entities) || {}, r = reg[entityId];
+    if (!r || r.platform !== 'tempest') return null;
+    const w = entityId.startsWith('weather.') ? entityId
+      : (Object.values(reg).find(x => x.platform === 'tempest' && x.entity_id.startsWith('weather.') && r.device_id && x.device_id === r.device_id) || {}).entity_id;
+    return w ? { config: { type: 'custom:' + TLC_TAG, weather: w } } : null;
   }
 });
 console.info(`%c ${TLC_TAG.toUpperCase()} %c ${TLC_VERSION} `, 'background:#4B2A5E;color:#fff', 'background:#FAC775;color:#4B2A5E');
