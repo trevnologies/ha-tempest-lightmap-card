@@ -1,8 +1,8 @@
-const TLC_VERSION = '1.1.0-dev.8';
-// Dev builds register under their own element name so they can run beside an
-// installed release. Set back to 'tempest-lightmap-card' before merging to main.
-const TLC_TAG = 'tempest-lightmap-card-dev';
-const TLC_NAME = 'Tempest LightMap Card (dev)';
+const TLC_VERSION = '1.1.0';
+// Development builds use 'tempest-lightmap-card-dev' / '(dev)' so they can run
+// beside an installed release; CI refuses a -dev tag on main.
+const TLC_TAG = 'tempest-lightmap-card';
+const TLC_NAME = 'Tempest LightMap Card';
 
 // Sensors are discovered on the weather entity's device by entity_id suffix.
 // The Tempest integration names its entities in fixed English, so the suffix
