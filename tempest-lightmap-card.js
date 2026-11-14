@@ -1,4 +1,4 @@
-const TLC_VERSION = '1.1.0-dev.4';
+const TLC_VERSION = '1.1.0-dev.5';
 // Dev builds register under their own element name so they can run beside an
 // installed release. Set back to 'tempest-lightmap-card' before merging to main.
 const TLC_TAG = 'tempest-lightmap-card-dev';
@@ -66,6 +66,19 @@ const tlcMarks = r => {
   return out.length > 1 ? out : null;
 };
 const tlcDec = v => { const s = String(v); return s.includes('.') ? s.split('.')[1].length : 0; };
+// Smallest "nice" step (1, 2, 2.5 or 5 x 10^n) that gives at most 10 intervals.
+const tlcNiceStep = span => {
+  const raw = span / 10, p = Math.pow(10, Math.floor(Math.log10(raw || 1)));
+  return [1, 2, 2.5, 5, 10].map(m => m * p).find(v => v >= raw - 1e-9);
+};
+// Merge a user scale with defaults field by field; a blank step is chosen to
+// give about 10 marks. Returns null when nothing is set (use built-in list).
+const tlcScale = (user, def) => {
+  if (!user || !['min', 'max', 'step'].some(k => typeof user[k] === 'number')) return null;
+  const min = typeof user.min === 'number' ? user.min : def.min, max = typeof user.max === 'number' ? user.max : def.max;
+  const step = typeof user.step === 'number' ? user.step : def.step != null ? def.step : tlcNiceStep(max - min);
+  return { min, max, step };
+};
 
 const TLC_PRESS_DEC = { inHg: 2, hPa: 0, mbar: 0, kPa: 1, cbar: 1, mmHg: 0, psi: 2, Pa: 0 };
 const tlcEsc = v => String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -159,10 +172,11 @@ class TempestLightmapCard extends HTMLElement {
   setConfig(c) {
     this._cfg = Object.assign({}, c || {});
     this._title = this._cfg.title || 'Weather station';
-    this._e = null; this._regRef = undefined;
-    this._fc = { hourly: [], daily: [] };
-    this._h = {}; this._rain = []; this._dirty = true;
-    this._stop();
+    if (!this._fc) { this._fc = { hourly: [], daily: [] }; this._h = {}; this._rain = []; }
+    this._dirty = true;
+    // Keep forecasts/history across edits; _resolve only resets them when the
+    // entities the card uses actually change.
+    if (this._hass && this.shadowRoot) { this._resolve(); if (this.isConnected) this._start(); this._schedule(); }
   }
   static getStubConfig(hass) { const w = tlcFindWeather(hass); return w ? { weather: w } : {}; }
   static async getConfigElement() { await tlcLoadEditorDeps(); return document.createElement(TLC_TAG + '-editor'); }
@@ -186,9 +200,16 @@ class TempestLightmapCard extends HTMLElement {
     TLC_DERIVED.forEach(k => { e[k] = ov[k] || null; });
     (c.exclude || []).forEach(k => { if (k !== 'weather' && k in e) e[k] = null; });
     this._regRef = h.entities;
+    // Only drop loaded data the change actually affects: forecasts depend on
+    // the weather entity, history/statistics on the charted sensors.
+    const old = this._e || {}, chg = ks => ks.some(k => old[k] !== e[k]);
     if (JSON.stringify(e) !== JSON.stringify(this._e)) {
-      this._e = e; this._stop(); this._fc = { hourly: [], daily: [] }; this._h = {}; this._rain = []; this._rainStart = null;
-      this._dirty = true;
+      if (chg(['weather'])) { this._stop(); this._fc = { hourly: [], daily: [] }; }
+      if (chg(['temp', 'dew', 'wind', 'gust', 'press', 'rain'])) {
+        this._h = {}; this._rain = []; this._rainStart = null;
+        clearInterval(this._hi); this._hi = null;       // _start() refetches for the new sensors
+      }
+      this._e = e; this._dirty = true;
     }
   }
   getCardSize() { return 24; }
@@ -421,15 +442,17 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
       return `<div class="h"><b>UV index</b><span>${uv.toFixed(1)}</span></div>${this._scale(['low', 'moderate', 'high', 'very high', 'extreme'], i => i <= ul ? uc[i] : '')}`;
     };
     out.rain_today = () => {
-      const r = this._rainNow('rain') || 0, custom = tlcMarks(c.rain_scale);
+      const rs = tlcScale(c.rain_scale, ri ? { min: 0.2, max: 3 } : { min: 5, max: 75 });
+      const r = this._rainNow('rain') || 0, custom = tlcMarks(rs);
       const rt = custom || (ri ? [0.2, 0.4, 0.6, 0.8, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0] : [5, 10, 15, 20, 25, 30, 40, 50, 65, 75]);
-      const dec = custom ? Math.max(tlcDec(c.rain_scale.min), tlcDec(c.rain_scale.step)) : null;
+      const dec = custom ? Math.max(tlcDec(rs.min), tlcDec(rs.step)) : null;
       const labels = rt.map(v => custom ? v.toFixed(dec) : ri ? v.toFixed(v < 1 || v % 1 ? (v * 100 % 10 ? 2 : 1) : 1) : String(v));
       return `<div class="h"><b>Rain today, ${ru}</b><span>${r.toFixed(rd)} ${ru} · ${tlcEsc(this._sinceRain())} days since rain</span></div>${this._scale(labels, i => r >= rt[i] ? '#378ADD' : '')}`;
     };
     out.wind = () => {
-      const wu = this._wu(), w = this._n('wind') || 0, gu = this._n('gust') || 0, custom = tlcMarks(c.wind_scale), wt = custom || TLC_WIND[wu][0];
-      const dec = custom ? Math.max(tlcDec(c.wind_scale.min), tlcDec(c.wind_scale.step)) : 0;
+      const wu = this._wu(), wl = TLC_WIND[wu][0], ws = tlcScale(c.wind_scale, { min: wl[0], max: wl[wl.length - 1] });
+      const w = this._n('wind') || 0, gu = this._n('gust') || 0, custom = tlcMarks(ws), wt = custom || wl;
+      const dec = custom ? Math.max(tlcDec(ws.min), tlcDec(ws.step)) : 0;
       return `<div class="h"><b>Wind and gust, ${tlcEsc(wu)}</b><span><i class="dot" style="background:#EF9F27"></i> ${w.toFixed(1)} wind${this._e.gust ? ` · <span${this._mi('gust')}><i class="dot" style="background:#FAC775"></i> ${gu.toFixed(1)} gust</span>` : ''}</span></div>${this._scale(wt.map(v => v.toFixed(dec)), i => w >= wt[i] ? '#EF9F27' : gu >= wt[i] ? '#FAC775' : '')}`;
     };
     const ent = { precipitation: 'rate', uv: 'uv', rain_today: 'rain', wind: 'wind' };
@@ -525,8 +548,9 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
   }
 
   _footer() {
-    const t = this._n('temp'), isF = this._isF(), tb = this._cfg.temperature_bar;
-    const marks = tlcMarks(tb) || (isF ? [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110] : [-10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40]);
+    const t = this._n('temp'), isF = this._isF();
+    const def = isF ? { min: 10, max: 110, step: 10 } : { min: -10, max: 40, step: 5 };
+    const marks = tlcMarks(tlcScale(this._cfg.temperature_bar, def) || def) || tlcMarks(def);
     const cur = t == null ? NaN : marks.filter(v => t >= v).pop(), dg = t == null ? -1 : ((Math.floor(t) % 10) + 10) % 10;
     const tr = marks.map(v => `<div>${v}<div class="fl ${t != null && t >= v ? 'on' : ''} ${v === cur ? 'cur' : ''}"></div></div>`).join('');
     const ones = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map(o => `<div><div class="fl ${dg >= 0 && ((o > 0 && o <= dg) || (o === 0 && dg === 0)) ? 'on' : ''}"></div>${o}</div>`).join('');
@@ -640,8 +664,8 @@ class TempestLightmapCardEditor extends HTMLElement {
     const ru = ri ? 'in' : 'mm', isF = tu.includes('F');
     const defaults = {
       temperature_bar: isF ? { min: 10, max: 110, step: 10 } : { min: -10, max: 40, step: 5 },
-      rain_scale: ri ? 'default 0.2–3.0 in (uneven steps)' : 'default 5–75 mm (uneven steps)',
-      wind_scale: 'default ' + (TLC_WIND[wu] ? TLC_WIND[wu][0][0] + '–' + TLC_WIND[wu][0].slice(-1)[0] : '2–50') + ' ' + wu + ' (uneven steps)',
+      rain_scale: ri ? { min: 0.2, max: 3, step: 'auto' } : { min: 5, max: 75, step: 'auto' },
+      wind_scale: TLC_WIND[wu] ? { min: TLC_WIND[wu][0][0], max: TLC_WIND[wu][0].slice(-1)[0], step: 'auto' } : { min: 2, max: 50, step: 'auto' },
       rain_intensity: ri ? { moderate: 0.1, heavy: 0.3 } : { moderate: 2.5, heavy: 7.6 },
       alerts: { heat: isF ? 95 : 35, wind: Math.round(20 / (TLC_WIND[wu] ? TLC_WIND[wu][1] : 1)) }
     };
@@ -698,8 +722,10 @@ class TempestLightmapCardEditor extends HTMLElement {
     if (n.startsWith('inc__')) return '';
     const f = this._field(n), d = f && this._defaults && this._defaults[f[0]];
     if (!f || d == null) return '';
-    if (typeof d === 'string') return f[1] === 'min' ? d + '. Set min, max and step to replace it.' : '';
-    return d[f[1]] == null ? '' : 'Default: ' + d[f[1]];
+    const v = d[f[1]];
+    if (v == null) return '';
+    if (v === 'auto') return 'Default: automatic (about 10 marks)';
+    return 'Default: ' + v + (f[0] === 'rain_scale' || f[0] === 'wind_scale' ? (f[1] === 'min' ? ' (uneven built-in steps until you set a value)' : '') : '');
   }
 
   _build() {
