@@ -46,3 +46,12 @@ jobs:
       # broken file before it reaches a release.
       - name: Parse check
         run: node --check tempest-lightmap-card.js
+
+      # Development builds register as tempest-lightmap-card-dev; a release
+      # must use the real element name or existing dashboards stop rendering.
+      - name: No development element name
+        run: |
+          if grep -nE "^const TLC_TAG = '[^']*-dev'" tempest-lightmap-card.js; then
+            echo "TLC_TAG still uses the -dev element name" >&2
+            exit 1
+          fi
