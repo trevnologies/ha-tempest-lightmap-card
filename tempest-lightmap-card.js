@@ -1,4 +1,4 @@
-const TLC_VERSION = '1.1.0-dev';
+const TLC_VERSION = '1.1.0-dev.4';
 // Dev builds register under their own element name so they can run beside an
 // installed release. Set back to 'tempest-lightmap-card' before merging to main.
 const TLC_TAG = 'tempest-lightmap-card-dev';
@@ -672,24 +672,34 @@ class TempestLightmapCardEditor extends HTMLElement {
     this._rMemo = { key, reg: this._hass.entities, e: probe._e };
     return probe._e;
   }
+  // HA calls computeLabel/computeHelper for grid containers too, not only for
+  // fields, so anything that isn't one of our field names must return nothing
+  // (a throw here aborts the whole form's render).
+  _field(n) {
+    const [k, x] = String(n || '').split('__');
+    return x && this._units && k in this._units ? [k, x] : null;
+  }
   _label(s) {
-    const n = s.name;
+    const n = (s && s.name) || '';
     if (n === 'title') return 'Title';
     if (n === 'weather') return 'Weather entity';
     if (n.startsWith('inc__')) return 'Show ' + TLC_ENTITY_LABELS[n.slice(5)];
     if (n.startsWith('ent__')) return TLC_ENTITY_LABELS[n.slice(5)] + ' entity';
-    const [k, x] = n.split('__'), u = this._units[k];
+    const f = this._field(n);
+    if (!f) return '';
+    const [k, x] = f, u = this._units[k];
     return x.charAt(0).toUpperCase() + x.slice(1) + ' (' + (typeof u === 'object' ? u[x] : u) + ')';
   }
   _helper(s) {
-    const n = s.name, r = this._resolved() || {};
+    const n = (s && s.name) || '', r = this._resolved() || {};
     if (n === 'title') return 'Text on the side tab. Default: Weather station';
     if (n === 'weather') return r.weather ? 'Blank = auto: ' + r.weather : 'No Tempest weather entity found; pick one';
     if (n.startsWith('ent__')) { const a = r[n.slice(5)]; return a ? 'Blank = auto: ' + a : 'Not found automatically'; }
     if (n.startsWith('inc__')) return '';
-    const [k, x] = n.split('__'), d = this._defaults[k];
-    if (typeof d === 'string') return x === 'min' ? d + '. Set min, max and step to replace it.' : '';
-    return 'Default: ' + d[x];
+    const f = this._field(n), d = f && this._defaults && this._defaults[f[0]];
+    if (!f || d == null) return '';
+    if (typeof d === 'string') return f[1] === 'min' ? d + '. Set min, max and step to replace it.' : '';
+    return d[f[1]] == null ? '' : 'Default: ' + d[f[1]];
   }
 
   _build() {
