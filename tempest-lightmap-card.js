@@ -1,4 +1,4 @@
-const TLC_VERSION = '1.1.0-dev.7';
+const TLC_VERSION = '1.1.0-dev.8';
 // Dev builds register under their own element name so they can run beside an
 // installed release. Set back to 'tempest-lightmap-card' before merging to main.
 const TLC_TAG = 'tempest-lightmap-card-dev';
@@ -74,17 +74,20 @@ const tlcRange = (user, def) => {
   const bars = Math.round(Math.min(TLC_MAX_MARKS, Math.max(2, typeof user.bars === 'number' ? user.bars : def.bars)));
   return max > min ? { min, max, bars } : null;
 };
-// Equal jumps between min and max.
-const tlcEven = r => Array.from({ length: r.bars }, (_, i) => r.min + (r.max - r.min) * i / (r.bars - 1));
 // Graduated round numbers (2, 4, 6, 8, 10, 15, 20, 25, 30, 40, 50 …): a ladder that
-// steps by 2 below 10, 5 to 30, 10 to 100, 25 to 300 and 50 above (scaled down
-// for ranges up to 10), sampled with gently growing gaps. Always keeps min and max.
+// steps by 2 below 10, 5 to 30, 10 to 100, 25 to 300 and 50 above, scaled to the
+// range's size (0.02, 0.04 … 0.1, 0.15 … for small rain totals), sampled with
+// gently growing gaps. Uses the coarsest ladder with enough values; always keeps min and max.
 const tlcGraduated = r => {
-  const f = r.max <= 10 ? 0.1 : 1, L = [];
-  const at = v => (v < 10 * f ? 2 : v < 30 * f ? 5 : v < 100 * f ? 10 : v < 300 * f ? 25 : 50) * f;
-  for (let v = 0; v <= r.max + 1e-9; v = +(v + at(v)).toFixed(6)) if (v >= r.min - 1e-9) L.push(v);
-  if (L[0] !== r.min) L.unshift(r.min);
-  if (L[L.length - 1] !== r.max) L.push(r.max);
+  const build = f => {
+    const at = v => (v < 10 * f ? 2 : v < 30 * f ? 5 : v < 100 * f ? 10 : v < 300 * f ? 25 : 50) * f, L = [];
+    for (let v = 0; v <= r.max + 1e-9; v = +(v + at(v)).toFixed(6)) if (v >= r.min - 1e-9) L.push(v);
+    if (L[0] !== r.min) L.unshift(r.min);
+    if (L[L.length - 1] !== r.max) L.push(r.max);
+    return L;
+  };
+  let e = Math.floor(Math.log10(r.max * 0.999)) - 1, L = build(Math.pow(10, e));
+  for (let n = 0; n < 2 && L.length < r.bars; n++) L = build(Math.pow(10, --e));
   if (L.length <= r.bars) return L;
   const out = [L[0]]; let j = 0;
   for (let i = 1; i < r.bars - 1; i++) {
@@ -460,13 +463,10 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
     };
     out.rain_today = () => {
       const rs = tlcRange(c.rain_scale, ri ? { min: 0.2, max: 3, bars: 10 } : { min: 5, max: 75, bars: 10 });
-      const r = this._rainNow('rain') || 0, custom = rs && tlcEven(rs);
+      const r = this._rainNow('rain') || 0, custom = rs && tlcGraduated(rs);
       const rt = custom || (ri ? [0.2, 0.4, 0.6, 0.8, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0] : [5, 10, 15, 20, 25, 30, 40, 50, 65, 75]);
-      // Fewest decimals that show every mark exactly (0.05, 0.10 …); if the jumps
-      // aren't round, enough to tell them apart (0.01, 0.23, 0.45 …).
-      const jump = rs ? (rs.max - rs.min) / (rs.bars - 1) : 1;
-      const exact = custom ? [0, 1, 2, 3].find(d => custom.every(v => Math.abs(v * 10 ** d - Math.round(v * 10 ** d)) < 1e-6)) : 0;
-      const dec = rs ? (exact != null ? exact : Math.min(3, Math.max(2, Math.ceil(-Math.log10(jump)) + 1))) : null;
+      // Custom marks share one decimal count (0.01, 0.15, 0.30 …) so the row reads evenly.
+      const dec = custom ? Math.min(3, Math.max(...custom.map(v => tlcDec(+v.toFixed(3))))) : null;
       const labels = rt.map(v => custom ? v.toFixed(dec) : ri ? v.toFixed(v < 1 || v % 1 ? (v * 100 % 10 ? 2 : 1) : 1) : String(v));
       return `<div class="h"><b>Rain today, ${ru}</b><span>${r.toFixed(rd)} ${ru} · ${tlcEsc(this._sinceRain())} days since rain</span></div>${this._scale(labels, i => r >= rt[i] ? '#378ADD' : '')}`;
     };
@@ -750,7 +750,7 @@ class TempestLightmapCardEditor extends HTMLElement {
     const v = d[f[1]];
     if (v == null) return '';
     if (f[0] === 'temperature_bar') return 'Default: ' + v + ' (rounded to tens)';
-    if (f[1] === 'bars') return 'Default: ' + v + ' (2–' + TLC_MAX_MARKS + ')' + (f[0] === 'rain_scale' ? '; equal jumps between min and max' : '; graduated steps, e.g. 2, 4, 6 … 10, 15, 20 … 30, 40, 50');
+    if (f[1] === 'bars') return 'Default: ' + v + ' (2–' + TLC_MAX_MARKS + '). Round numbers with gaps that grow along the scale' + (f[0] === 'rain_scale' ? ', e.g. 0.01, 0.15, 0.30 … 1.50, 1.75, 2.00' : ', e.g. 2, 4, 6 … 10, 15, 20 … 30, 40, 50');
     return 'Default: ' + v;
   }
 
