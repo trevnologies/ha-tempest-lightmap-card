@@ -536,15 +536,22 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
 }
 
 // ---------------------------------------------------------------- editor
-// ha-form and the entity picker are lazy-loaded by HA; opening a built-in
-// card's editor once guarantees they are registered before ours renders.
+// ha-form and the entity picker are lazy-loaded by HA. Opening a built-in
+// card's editor registers them. createCardElement can hand back an element
+// whose class is still loading, so wait for the class itself, and resolve
+// only once ha-form is really registered (or give up after a timeout).
+const tlcWait = (p, ms) => Promise.race([p, new Promise(r => setTimeout(r, ms))]);
 const tlcLoadEditorDeps = async () => {
-  if (customElements.get('ha-form') && customElements.get('ha-entity-picker')) return;
+  if (customElements.get('ha-form') && customElements.get('ha-entity-picker')) return true;
   try {
     const helpers = await window.loadCardHelpers();
-    const card = await helpers.createCardElement({ type: 'entities', entities: [] });
-    if (card && card.constructor.getConfigElement) await card.constructor.getConfigElement();
-  } catch (e) { /* the editor still renders; HA will upgrade elements once they load */ }
+    helpers.createCardElement({ type: 'entities', entities: ['sun.sun'] });
+    await tlcWait(customElements.whenDefined('hui-entities-card'), 5000);
+    const cls = customElements.get('hui-entities-card');
+    if (cls && cls.getConfigElement) await cls.getConfigElement();
+  } catch (e) { /* fall through to the wait below */ }
+  await tlcWait(customElements.whenDefined('ha-form'), 5000);
+  return !!customElements.get('ha-form');
 };
 
 const TLC_SCALE_FIELDS = [
@@ -644,10 +651,10 @@ class TempestLightmapCardEditor extends HTMLElement {
       general: [{ name: 'title', selector: { text: {} } }, { name: 'weather', selector: { entity: { domain: 'weather' } } }],
       // One plain form per group: several same-named expandables in one ha-form render nothing.
       scales: TLC_SCALE_FIELDS.map(([k, , f]) => [{ type: 'grid', name: k, flatten: true, schema: f.map(x => ({ name: k + '__' + x, selector: num })) }]),
-      entities: [{ type: 'expandable', name: '', title: 'Entities', schema: Object.keys(TLC_ENTITY_LABELS).map(k => ({ type: 'grid', name: '', schema: [
+      entities: Object.keys(TLC_ENTITY_LABELS).map(k => ({ type: 'grid', name: 'row__' + k, flatten: true, schema: [
         { name: 'inc__' + k, selector: { boolean: {} } },
         { name: 'ent__' + k, selector: { entity: { domain: k === 'sun' ? 'sun' : 'sensor' } } }
-      ] })) }]
+      ] }))
     };
   }
   _unit(k, fb) {
@@ -687,6 +694,9 @@ class TempestLightmapCardEditor extends HTMLElement {
 
   _build() {
     this._built = true;
+    this._buildAsync();
+  }
+  async _buildAsync() {
     const sr = this.shadowRoot || this.attachShadow({ mode: 'open' });
     sr.innerHTML = `<style>${TLC_EDITOR_CSS}</style>
 <div id="general"></div>
@@ -696,6 +706,18 @@ class TempestLightmapCardEditor extends HTMLElement {
 ${TLC_SCALE_FIELDS.map(([k, title]) => `<div class="grp">${tlcEsc(title)}</div><div id="sc_${k}"></div>`).join('')}
 <div class="sec">Entities</div><div class="hint">Turn off anything you don't want shown; the card hides every part that uses it.</div>
 <div id="entities"></div>`;
+    // Setting properties on an <ha-form> before its class is registered
+    // stores them on the bare element and hides the class's own setters, so
+    // the form would stay blank forever. Create forms only after it exists.
+    this._renderLayout();
+    sr.getElementById('reset').addEventListener('click', () => {
+      const c = Object.assign({}, this._cfg); ['panels', 'items', 'hide_panels', 'hide_items'].forEach(k => delete c[k]);
+      this._emit(c); this._renderLayout();
+    });
+    if (!(await tlcLoadEditorDeps())) {
+      sr.querySelectorAll('#general,[id^="sc_"],#entities').forEach(el => { el.innerHTML = '<div class="hint">Home Assistant\'s form fields did not load. Use "Show code editor" for these settings.</div>'; });
+      return;
+    }
     const sch = this._schemas();
     this._formIds = ['general', ...TLC_SCALE_FIELDS.map(g => 'sc_' + g[0]), 'entities'];
     this._forms = this._formIds.map(id => {
@@ -706,11 +728,6 @@ ${TLC_SCALE_FIELDS.map(([k, title]) => `<div class="grp">${tlcEsc(title)}</div><
       sr.getElementById(id).appendChild(f);
       return f;
     });
-    sr.getElementById('reset').addEventListener('click', () => {
-      const c = Object.assign({}, this._cfg); ['panels', 'items', 'hide_panels', 'hide_items'].forEach(k => delete c[k]);
-      this._emit(c); this._renderLayout();
-    });
-    this._renderLayout();
   }
   _syncForms() {
     if (!this._forms) return;
