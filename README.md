@@ -135,22 +135,29 @@ beside it rather than below it.
 ### Scales and thresholds
 
 Leave any of these out to use the default for your units. Each field falls
-back to its own default, so you can set just `min` or `max`. On the rain and
-wind scales a blank `step` is chosen automatically to give at most 10
-intervals; the temperature bar has no step. Scales show at most 13 marks; an invalid range (for example `max`
-below `min`) falls back to the default.
+back to its own default, so you can set just `min` or `max`.
+
+- **Rain today** spaces its `bars` (2–13) in equal jumps between `min` and
+  `max`, e.g. 0.01–2 in with 10 bars → 0.01, 0.23, 0.45 … 2.00.
+- **Wind** picks its `bars` from round numbers with gaps that grow along the
+  scale, e.g. 2–50 mph with 11 bars → 2, 4, 6, 8, 10, 15, 20, 25, 30, 40, 50.
+  A narrow range may yield fewer bars than requested.
+- **Temperature bar** always steps by 10; `min` and `max` round to tens.
+
+An invalid range (`max` not above `min`) falls back to the default.
 
 | Option | Description | Default (imperial / metric) |
 |--------|-------------|-----------------------------|
 | `temperature_bar` | `min` and `max` of the bottom temperature bar, rounded to tens (the bar always steps by 10; the second row shows the ones digit) | 10–110 °F / −10–40 °C |
-| `rain_scale` | `min`, `max`, `step` of the *Rain today* scale | 0.2–3.0 in / 5–75 mm, uneven built-in steps until you set a value |
-| `wind_scale` | `min`, `max`, `step` of the *Wind and gust* scale, in the wind sensor's unit | 2–50 mph / 5–80 km/h, uneven built-in steps until you set a value |
+| `rain_scale` | `min`, `max` and number of `bars` of the *Rain today* scale (equal jumps) | 0.2–3.0 in / 5–75 mm, 10 bars (built-in uneven steps until you set a value) |
+| `wind_scale` | `min`, `max` and number of `bars` of the *Wind and gust* scale, in the wind sensor's unit (graduated) | 2–50 mph / 5–80 km/h, 11 bars |
 | `rain_intensity` | `moderate` and `heavy` thresholds, per hour | 0.1 / 0.3 in, 2.5 / 7.6 mm |
 | `alerts` | `heat` (heat index) and `wind` (wind speed) that light the heat and wind icons | 95 °F / 35 °C, 20 mph (converted to your wind unit) |
 
 ```yaml
 temperature_bar: { min: 20, max: 110 }             # 10 marks
-rain_scale: { min: 0, max: 0.5 }                   # dry climates; step chosen automatically (0.05)
+rain_scale: { min: 0, max: 0.5, bars: 11 }         # dry climates: 0.00, 0.05 … 0.50
+wind_scale: { max: 30, bars: 8 }                   # 2, 4, 8, 10, 15, 20, 25, 30
 alerts: { heat: 105 }
 ```
 
