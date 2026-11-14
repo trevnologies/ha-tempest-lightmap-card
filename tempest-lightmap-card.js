@@ -1,4 +1,4 @@
-const TLC_VERSION = '1.1.0-dev.5';
+const TLC_VERSION = '1.1.0-dev.6';
 // Dev builds register under their own element name so they can run beside an
 // installed release. Set back to 'tempest-lightmap-card' before merging to main.
 const TLC_TAG = 'tempest-lightmap-card-dev';
@@ -549,8 +549,11 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
 
   _footer() {
     const t = this._n('temp'), isF = this._isF();
-    const def = isF ? { min: 10, max: 110, step: 10 } : { min: -10, max: 40, step: 5 };
-    const marks = tlcMarks(tlcScale(this._cfg.temperature_bar, def) || def) || tlcMarks(def);
+    // Always steps by 10: the second row shows the ones digit within the current ten.
+    const def = isF ? { min: 10, max: 110 } : { min: -10, max: 40 }, tb = this._cfg.temperature_bar || {};
+    const lo = Math.floor((typeof tb.min === 'number' ? tb.min : def.min) / 10) * 10;
+    const hi = Math.ceil((typeof tb.max === 'number' ? tb.max : def.max) / 10) * 10;
+    const marks = tlcMarks({ min: lo, max: hi, step: 10 }) || tlcMarks({ min: def.min, max: def.max, step: 10 });
     const cur = t == null ? NaN : marks.filter(v => t >= v).pop(), dg = t == null ? -1 : ((Math.floor(t) % 10) + 10) % 10;
     const tr = marks.map(v => `<div>${v}<div class="fl ${t != null && t >= v ? 'on' : ''} ${v === cur ? 'cur' : ''}"></div></div>`).join('');
     const ones = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map(o => `<div><div class="fl ${dg >= 0 && ((o > 0 && o <= dg) || (o === 0 && dg === 0)) ? 'on' : ''}"></div>${o}</div>`).join('');
@@ -579,7 +582,7 @@ const tlcLoadEditorDeps = async () => {
 };
 
 const TLC_SCALE_FIELDS = [
-  ['temperature_bar', 'Temperature bar', ['min', 'max', 'step']],
+  ['temperature_bar', 'Temperature bar', ['min', 'max']],
   ['rain_scale', 'Rain today scale', ['min', 'max', 'step']],
   ['wind_scale', 'Wind scale', ['min', 'max', 'step']],
   ['rain_intensity', 'Rain intensity thresholds (per hour)', ['moderate', 'heavy']],
@@ -636,6 +639,7 @@ const TLC_EDITOR_CSS = `
 .lab{flex:1}
 .row button{background:none;border:1px solid var(--divider-color);border-radius:6px;color:var(--primary-text-color);width:28px;height:26px;cursor:pointer;font-size:11px}
 .row button:disabled{opacity:.3;cursor:default}
+.cust{display:flex;align-items:center;gap:8px;margin:4px 0 8px;cursor:pointer}
 .grp{margin:12px 0 4px;font-size:13px;font-weight:500;color:var(--secondary-text-color)}
 .reset{margin-top:8px;background:none;border:1px solid var(--divider-color);border-radius:6px;color:var(--primary-color);padding:4px 10px;cursor:pointer}
 `;
@@ -663,7 +667,7 @@ class TempestLightmapCardEditor extends HTMLElement {
     const us = this._hass && this._hass.config && this._hass.config.unit_system, ri = us ? us.length === 'mi' : tu.includes('F');
     const ru = ri ? 'in' : 'mm', isF = tu.includes('F');
     const defaults = {
-      temperature_bar: isF ? { min: 10, max: 110, step: 10 } : { min: -10, max: 40, step: 5 },
+      temperature_bar: isF ? { min: 10, max: 110 } : { min: -10, max: 40 },
       rain_scale: ri ? { min: 0.2, max: 3, step: 'auto' } : { min: 5, max: 75, step: 'auto' },
       wind_scale: TLC_WIND[wu] ? { min: TLC_WIND[wu][0][0], max: TLC_WIND[wu][0].slice(-1)[0], step: 'auto' } : { min: 2, max: 50, step: 'auto' },
       rain_intensity: ri ? { moderate: 0.1, heavy: 0.3 } : { moderate: 2.5, heavy: 7.6 },
@@ -725,6 +729,7 @@ class TempestLightmapCardEditor extends HTMLElement {
     const v = d[f[1]];
     if (v == null) return '';
     if (v === 'auto') return 'Default: automatic (about 10 marks)';
+    if (f[0] === 'temperature_bar') return 'Default: ' + v + ' (rounded to tens)';
     return 'Default: ' + v + (f[0] === 'rain_scale' || f[0] === 'wind_scale' ? (f[1] === 'min' ? ' (uneven built-in steps until you set a value)' : '') : '');
   }
 
@@ -740,12 +745,16 @@ class TempestLightmapCardEditor extends HTMLElement {
 <div class="lay" id="lay"></div><button class="reset" id="reset">Reset layout to default</button>
 <div class="sec">Scales and thresholds</div><div class="hint">Leave blank to use the defaults for your units.</div>
 ${TLC_SCALE_FIELDS.map(([k, title]) => `<div class="grp">${tlcEsc(title)}</div><div id="sc_${k}"></div>`).join('')}
-<div class="sec">Entities</div><div class="hint">Turn off anything you don't want shown; the card hides every part that uses it.</div>
+<div class="sec">Entities</div><div class="hint">Off: every entity is detected automatically. On: each one can be hidden or replaced; hiding an entity hides every part of the card that uses it.</div>
+<label class="cust"><input type="checkbox" id="custEnt"> Customize entities</label>
 <div id="entities"></div>`;
     // Setting properties on an <ha-form> before its class is registered
     // stores them on the bare element and hides the class's own setters, so
     // the form would stay blank forever. Create forms only after it exists.
     this._renderLayout();
+    const cust = sr.getElementById('custEnt');
+    cust.addEventListener('change', () => this._setCustomize(cust.checked));
+    this._syncCustomize();
     sr.getElementById('reset').addEventListener('click', () => {
       const c = Object.assign({}, this._cfg); ['panels', 'items', 'hide_panels', 'hide_items'].forEach(k => delete c[k]);
       this._emit(c); this._renderLayout();
@@ -765,7 +774,30 @@ ${TLC_SCALE_FIELDS.map(([k, title]) => `<div class="grp">${tlcEsc(title)}</div><
       return f;
     });
   }
+  // Customizing is on whenever the config carries entity overrides or
+  // exclusions (or the user just switched it on in this session).
+  _custOn() { return !!(this._entOn || this._cfg.entities || this._cfg.exclude); }
+  _syncCustomize() {
+    const sr = this.shadowRoot; if (!sr) return;
+    const on = this._custOn(), cb = sr.getElementById('custEnt'), box = sr.getElementById('entities');
+    if (cb) cb.checked = on;
+    if (box) box.style.display = on ? '' : 'none';
+  }
+  _setCustomize(on) {
+    const c = Object.assign({}, this._cfg);
+    if (on) {
+      // Start from what is detected now so every row shows a value.
+      const r = this._resolved() || {}, ov = Object.assign({}, c.entities || {});
+      Object.keys(TLC_ENTITY_LABELS).forEach(k => { if (!ov[k] && r[k]) ov[k] = r[k]; });
+      if (Object.keys(ov).length) c.entities = ov;
+      this._entOn = true;
+    } else {
+      delete c.entities; delete c.exclude; this._entOn = false;
+    }
+    this._emit(c); this._syncForms(); this._syncCustomize();
+  }
   _syncForms() {
+    this._syncCustomize();
     if (!this._forms) return;
     const d = tlcToForm(this._cfg), sch = this._schemas();
     this._forms.forEach((f, i) => { f.data = d; f.schema = this._schemaFor(sch, this._formIds[i]); });

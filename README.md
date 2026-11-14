@@ -137,27 +137,30 @@ beside it rather than below it.
 Leave any of these out to use the default for your units. Each field falls
 back to its own default, so you can set just `min` or `max`. On the rain and
 wind scales a blank `step` is chosen automatically to give at most 10
-intervals. Scales show at most 13 marks; an invalid range (for example `max`
+intervals; the temperature bar has no step. Scales show at most 13 marks; an invalid range (for example `max`
 below `min`) falls back to the default.
 
 | Option | Description | Default (imperial / metric) |
 |--------|-------------|-----------------------------|
-| `temperature_bar` | `min`, `max`, `step` of the bottom temperature bar | 10–110 by 10 °F / −10–40 by 5 °C |
+| `temperature_bar` | `min` and `max` of the bottom temperature bar, rounded to tens (the bar always steps by 10; the second row shows the ones digit) | 10–110 °F / −10–40 °C |
 | `rain_scale` | `min`, `max`, `step` of the *Rain today* scale | 0.2–3.0 in / 5–75 mm, uneven built-in steps until you set a value |
 | `wind_scale` | `min`, `max`, `step` of the *Wind and gust* scale, in the wind sensor's unit | 2–50 mph / 5–80 km/h, uneven built-in steps until you set a value |
 | `rain_intensity` | `moderate` and `heavy` thresholds, per hour | 0.1 / 0.3 in, 2.5 / 7.6 mm |
 | `alerts` | `heat` (heat index) and `wind` (wind speed) that light the heat and wind icons | 95 °F / 35 °C, 20 mph (converted to your wind unit) |
 
 ```yaml
-temperature_bar: { min: 20, max: 110, step: 10 }   # 10 marks
+temperature_bar: { min: 20, max: 110 }             # 10 marks
 rain_scale: { min: 0, max: 0.5 }                   # dry climates; step chosen automatically (0.05)
 alerts: { heat: 105 }
 ```
 
 ### Entities
 
-Every entity is found automatically from the Tempest device. In the editor
-each one has a **Show** toggle and a picker:
+Every entity is found automatically from the Tempest device. In the editor,
+**Customize entities** is off by default, which keeps everything automatic.
+Turning it on lists every entity, pre-filled with the one detected now, each
+with a **Show** toggle and a picker. Turning it off again removes all entity
+overrides and exclusions from the config.
 
 - **Show off** (`exclude`) hides every part of the card that uses that
   entity. For example, excluding `strikes` removes the lightning header stat
