@@ -39,6 +39,10 @@ const TLC_PANELS = [
 ];
 const TLC_HALF_ITEMS = ['precipitation', 'uv'];
 const TLC_COND_WIDTH = { conditions: '2.2fr', pressure: '1fr', moon: '1.6fr' };
+// Narrowest each Conditions-row group can be while keeping ~5px between labels
+// (measured in Roboto, Home Assistant's font). The row stacks once the card is
+// too narrow for the groups shown, plus 28px gaps and 58px of card padding.
+const TLC_COND_MIN = { conditions: 440, pressure: 140, moon: 304 };
 const TLC_ENTITY_LABELS = {
   temp: 'Air temperature', feels: 'Feels like', dew: 'Dew point', hum: 'Humidity', wind: 'Wind speed', gust: 'Wind gust',
   dir: 'Wind direction', press: 'Sea-level pressure', trend: 'Pressure trend', uv: 'UV index', rate: 'Rain intensity',
@@ -164,7 +168,6 @@ const TLC_CSS = `
 .scs{display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;align-content:start}
 .scs .full{grid-column:1/-1}
 .st{display:grid;grid-template-columns:2.2fr 1fr 1.6fr;gap:28px}
-@container (max-width:900px){.st{grid-template-columns:1fr!important}.st .h.l,.st .h.c,.st .h.r{justify-content:space-between}.st .pt{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0}}
 @container (max-width:520px){.scs{grid-template-columns:1fr}}
 .cond{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));text-align:center}
 .cond ha-icon{--mdc-icon-size:26px}
@@ -504,7 +507,9 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
       moon: a => `<div${this._mi('moon')}><div class="h ${a}"><b>Moon phase</b><span>${ml}</span></div>${moon}</div>`
     };
     const n = items.length, align = i => n === 1 ? 'c' : i === 0 ? 'l' : i === n - 1 ? 'r' : 'c';
-    return `<div class="p s12 st" style="grid-template-columns:${items.map(i => TLC_COND_WIDTH[i]).join(' ')}">${items.map((i, k) => out[i](align(k))).join('')}</div>`;
+    const fit = items.reduce((t, i) => t + TLC_COND_MIN[i], 0) + 28 * (n - 1) + 58;
+    const stack = n > 1 ? `<style>@container (max-width:${fit - 1}px){.st{grid-template-columns:1fr!important}.st .h.l,.st .h.c,.st .h.r{justify-content:space-between}}</style>` : '';
+    return `${stack}<div class="p s12 st" style="grid-template-columns:${items.map(i => `minmax(${TLC_COND_MIN[i]}px,${TLC_COND_WIDTH[i]})`).join(' ')}">${items.map((i, k) => out[i](align(k))).join('')}</div>`;
   }
 
   _line(series, span, dec) {

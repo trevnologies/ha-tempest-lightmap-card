@@ -3,7 +3,8 @@
 ## 1.1.1
 
 ### Fixed
-- Conditions row on narrow screens: when Conditions, Pressure and Moon phase stack, each heading now puts its title on the left and its value on the right, like the other panels, and the pressure trend icons spread across the full width. The wide-screen row is unchanged.
+- Conditions row: it now stays on one line only while every label fits, and stacks as soon as it doesn't. Before, between about 900 and 1000 px wide the icons and labels were crammed together. The width it needs depends on which groups are shown; with all three it's about 1000 px.
+- Conditions row when stacked: each heading puts its title on the left and its value on the right, like the other panels.
 
 ## 1.1.0
 
