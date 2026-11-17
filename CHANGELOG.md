@@ -6,6 +6,9 @@
 - Conditions row: it now stays on one line only while every label fits, and stacks as soon as it doesn't. Before, between about 900 and 1000 px wide the icons and labels were crammed together. The width it needs depends on which groups are shown; with all three it's about 1000 px.
 - Conditions row when stacked: each heading puts its title on the left and its value on the right, like the other panels.
 
+### Documentation
+- Screenshots of the card on desktop and on a phone, and of the visual editor, in the README.
+
 ## 1.1.0
 
 ### Added

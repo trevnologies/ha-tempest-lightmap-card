@@ -7,6 +7,8 @@ current conditions, a 12-hour and 10-day forecast, humidity and wind dials,
 precipitation/UV/rain/wind scales, 24-hour temperature, wind and pressure
 charts, 30 days of daily rainfall and a temperature bar.
 
+![Tempest LightMap Card on a desktop dashboard](https://raw.githubusercontent.com/trevnologies/ha-tempest-lightmap-card/main/images/card-desktop.png)
+
 - **Works with no configuration.** The card finds your Tempest weather entity
   and all of its sensors on its own.
 - **Visual editor** for the title, layout, scales, thresholds and entities.
@@ -16,6 +18,17 @@ charts, 30 days of daily rainfall and a temperature bar.
   entity dialog with its history, attributes and settings.
 - **Single dependency-free JavaScript module.** No other custom cards,
   card-mod or build step.
+
+<table>
+  <tr>
+    <th>On a phone</th>
+    <th>Visual editor</th>
+  </tr>
+  <tr>
+    <td valign="top"><img src="https://raw.githubusercontent.com/trevnologies/ha-tempest-lightmap-card/main/images/card-mobile.png" width="300" alt="The card on a phone, with panels stacked in one column"></td>
+    <td valign="top"><img src="https://raw.githubusercontent.com/trevnologies/ha-tempest-lightmap-card/main/images/editor.png" width="300" alt="The visual editor: title, layout, scales and thresholds, and entities"></td>
+  </tr>
+</table>
 
 ## Requirements
 
