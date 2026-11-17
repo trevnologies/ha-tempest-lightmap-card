@@ -1,4 +1,4 @@
-const TLC_VERSION = '1.1.1-dev.1';
+const TLC_VERSION = '1.1.1-dev.2';
 // Development builds use 'tempest-lightmap-card-dev' / '(dev)' so they can run
 // beside an installed release; CI refuses a -dev tag on main.
 const TLC_TAG = 'tempest-lightmap-card-dev';
@@ -755,7 +755,14 @@ class TempestLightmapCardEditor extends HTMLElement {
     const v = d[f[1]];
     if (v == null) return '';
     if (f[0] === 'temperature_bar') return 'Default: ' + v + ' (rounded to tens)';
-    if (f[1] === 'bars') return 'Default: ' + v + ' (2–' + TLC_MAX_MARKS + '). Round numbers with gaps that grow along the scale' + (f[0] === 'rain_scale' ? ', e.g. 0.01, 0.15, 0.30 … 1.50, 1.75, 2.00' : ', e.g. 2, 4, 6 … 10, 15, 20 … 30, 40, 50');
+    if (f[1] === 'bars') {
+      // Example = the marks the default min/max/bars produce, formatted like the card.
+      const g = tlcGraduated(d) || [], rain = f[0] === 'rain_scale';
+      const dec = rain && g.length ? Math.min(3, Math.max(...g.map(x => tlcDec(+x.toFixed(3))))) : null;
+      const L = g.map(x => dec == null ? String(+x.toFixed(2)) : x.toFixed(dec));
+      const ex = L.length > 6 ? L.slice(0, 3).join(', ') + ' … ' + L.slice(-3).join(', ') : L.join(', ');
+      return 'Default: ' + v + ' (2–' + TLC_MAX_MARKS + '). Round numbers with gaps that grow along the scale' + (ex ? ', e.g. ' + ex : '');
+    }
     return 'Default: ' + v;
   }
 
