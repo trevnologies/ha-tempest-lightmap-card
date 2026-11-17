@@ -1,4 +1,4 @@
-const TLC_VERSION = '1.1.0';
+const TLC_VERSION = '1.1.1';
 // Development builds use 'tempest-lightmap-card-dev' / '(dev)' so they can run
 // beside an installed release; CI refuses a -dev tag on main.
 const TLC_TAG = 'tempest-lightmap-card';
@@ -39,6 +39,10 @@ const TLC_PANELS = [
 ];
 const TLC_HALF_ITEMS = ['precipitation', 'uv'];
 const TLC_COND_WIDTH = { conditions: '2.2fr', pressure: '1fr', moon: '1.6fr' };
+// Narrowest each Conditions-row group can be while keeping ~5px between labels
+// (measured in Roboto, Home Assistant's font). The row stacks once the card is
+// too narrow for the groups shown, plus 28px gaps and 58px of card padding.
+const TLC_COND_MIN = { conditions: 440, pressure: 140, moon: 304 };
 const TLC_ENTITY_LABELS = {
   temp: 'Air temperature', feels: 'Feels like', dew: 'Dew point', hum: 'Humidity', wind: 'Wind speed', gust: 'Wind gust',
   dir: 'Wind direction', press: 'Sea-level pressure', trend: 'Pressure trend', uv: 'UV index', rate: 'Rain intensity',
@@ -164,7 +168,6 @@ const TLC_CSS = `
 .scs{display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;align-content:start}
 .scs .full{grid-column:1/-1}
 .st{display:grid;grid-template-columns:2.2fr 1fr 1.6fr;gap:28px}
-@container (max-width:900px){.st{grid-template-columns:1fr!important}}
 @container (max-width:520px){.scs{grid-template-columns:1fr}}
 .cond{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));text-align:center}
 .cond ha-icon{--mdc-icon-size:26px}
@@ -504,7 +507,9 @@ ${items.length ? `<div class="qs">${items.map(i => Q[i]()).join('')}</div>` : '<
       moon: a => `<div${this._mi('moon')}><div class="h ${a}"><b>Moon phase</b><span>${ml}</span></div>${moon}</div>`
     };
     const n = items.length, align = i => n === 1 ? 'c' : i === 0 ? 'l' : i === n - 1 ? 'r' : 'c';
-    return `<div class="p s12 st" style="grid-template-columns:${items.map(i => TLC_COND_WIDTH[i]).join(' ')}">${items.map((i, k) => out[i](align(k))).join('')}</div>`;
+    const fit = items.reduce((t, i) => t + TLC_COND_MIN[i], 0) + 28 * (n - 1) + 58;
+    const stack = n > 1 ? `<style>@container (max-width:${fit - 1}px){.st{grid-template-columns:1fr!important}.st .h.l,.st .h.c,.st .h.r{justify-content:space-between}}</style>` : '';
+    return `${stack}<div class="p s12 st" style="grid-template-columns:${items.map(i => `minmax(${TLC_COND_MIN[i]}px,${TLC_COND_WIDTH[i]})`).join(' ')}">${items.map((i, k) => out[i](align(k))).join('')}</div>`;
   }
 
   _line(series, span, dec) {
@@ -750,7 +755,14 @@ class TempestLightmapCardEditor extends HTMLElement {
     const v = d[f[1]];
     if (v == null) return '';
     if (f[0] === 'temperature_bar') return 'Default: ' + v + ' (rounded to tens)';
-    if (f[1] === 'bars') return 'Default: ' + v + ' (2–' + TLC_MAX_MARKS + '). Round numbers with gaps that grow along the scale' + (f[0] === 'rain_scale' ? ', e.g. 0.01, 0.15, 0.30 … 1.50, 1.75, 2.00' : ', e.g. 2, 4, 6 … 10, 15, 20 … 30, 40, 50');
+    if (f[1] === 'bars') {
+      // Example = the marks the default min/max/bars produce, formatted like the card.
+      const g = tlcGraduated(d) || [], rain = f[0] === 'rain_scale';
+      const dec = rain && g.length ? Math.min(3, Math.max(...g.map(x => tlcDec(+x.toFixed(3))))) : null;
+      const L = g.map(x => dec == null ? String(+x.toFixed(2)) : x.toFixed(dec));
+      const ex = L.length > 6 ? L.slice(0, 3).join(', ') + ' … ' + L.slice(-3).join(', ') : L.join(', ');
+      return 'Default: ' + v + ' (2–' + TLC_MAX_MARKS + '). Round numbers with gaps that grow along the scale' + (ex ? ', e.g. ' + ex : '');
+    }
     return 'Default: ' + v;
   }
 
