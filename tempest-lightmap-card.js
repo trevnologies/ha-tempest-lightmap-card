@@ -1,4 +1,4 @@
-const TLC_VERSION = '1.1.0';
+const TLC_VERSION = '1.1.1';
 // Development builds use 'tempest-lightmap-card-dev' / '(dev)' so they can run
 // beside an installed release; CI refuses a -dev tag on main.
 const TLC_TAG = 'tempest-lightmap-card';
@@ -164,7 +164,7 @@ const TLC_CSS = `
 .scs{display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;align-content:start}
 .scs .full{grid-column:1/-1}
 .st{display:grid;grid-template-columns:2.2fr 1fr 1.6fr;gap:28px}
-@container (max-width:900px){.st{grid-template-columns:1fr!important}}
+@container (max-width:900px){.st{grid-template-columns:1fr!important}.st .h.l,.st .h.c,.st .h.r{justify-content:space-between}.st .pt{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0}}
 @container (max-width:520px){.scs{grid-template-columns:1fr}}
 .cond{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));text-align:center}
 .cond ha-icon{--mdc-icon-size:26px}

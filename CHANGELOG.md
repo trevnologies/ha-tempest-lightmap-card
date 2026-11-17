@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+
+### Fixed
+- Conditions row on narrow screens: when Conditions, Pressure and Moon phase stack, each heading now puts its title on the left and its value on the right, like the other panels, and the pressure trend icons spread across the full width. The wide-screen row is unchanged.
+
 ## 1.1.0
 
 ### Added

@@ -51,7 +51,7 @@ The Marketplace registers the dashboard resource for you.
 1. Download `tempest-lightmap-card.js` from the [latest release](https://github.com/trevnologies/ha-tempest-lightmap-card/releases/latest)
 2. Copy it to `/config/www/tempest-lightmap-card.js`
 3. **Settings → Dashboards → ⋮ → Resources → Add resource**:
-   URL `/local/tempest-lightmap-card.js?v=1.1.0`, type **JavaScript module**
+   URL `/local/tempest-lightmap-card.js?v=1.1.1`, type **JavaScript module**
 4. Hard-refresh your browser. Change the `?v=` value after every update.
 
 ## Adding the card
