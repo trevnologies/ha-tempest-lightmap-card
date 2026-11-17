@@ -5,6 +5,7 @@
 ### Fixed
 - Conditions row: it now stays on one line only while every label fits, and stacks as soon as it doesn't. Before, between about 900 and 1000 px wide the icons and labels were crammed together. The width it needs depends on which groups are shown; with all three it's about 1000 px.
 - Conditions row when stacked: each heading puts its title on the left and its value on the right, like the other panels.
+- Visual editor: the *Number of bars* hints for the rain-today and wind scales now show the marks the defaults for your units actually produce.
 
 ### Documentation
 - Screenshots of the card on desktop and on a phone, and of the visual editor, in the README.
